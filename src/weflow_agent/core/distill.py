@@ -25,7 +25,10 @@ def load_config(path: str | None) -> dict:
     try:
         import tomllib  # py3.11+
     except ModuleNotFoundError:
-        return {}
+        try:
+            import tomli as tomllib  # py3.10 兼容
+        except ModuleNotFoundError:
+            return {}
     p = Path(path)
     if not p.exists():
         return {}
@@ -61,7 +64,40 @@ def _llm_distill(messages: list[Message], name: str, config: dict) -> PersonaDoc
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         payload = json.loads(re.sub(r"```(json)?|```", "", content).strip())
-        return PersonaDoc(name=name, display_name=name, **{k: v for k, v in payload.items() if k in PersonaDoc.model_fields})
+        data = dict(payload)
+        data["name"] = name                      # 强制参数名
+        data.setdefault("display_name", name)    # 有则用模型的，无则用参数
+        clean = {k: v for k, v in data.items() if k in PersonaDoc.model_fields}
+        doc = PersonaDoc(**clean)
+        # C2: 把 LLM 结构化字段渲染成 system_prompt，避免 distill() 守卫判空走兜底
+        rules = data.get("expression_rules") or doc.expression_rules or []
+        phrases = data.get("signature_phrases") or doc.signature_phrases or []
+        repls = data.get("example_replies") or doc.example_replies or {}
+        memories = data.get("memory") or doc.memory or []
+        relationship = data.get("relationship") or doc.relationship or ""
+        prompt_lines = [
+            f"你是{doc.display_name}。{relationship}".rstrip("。") + "。",
+            "",
+            "# 表达硬规则（必须遵守）",
+            *[f"- {r}" for r in rules],
+            "",
+            "# 高频口头禅/语气词",
+            *[f"- {w}" for w in phrases],
+            "",
+            "# 场景例句（摘自聊天记录）",
+        ]
+        for scene, lines in repls.items():
+            prompt_lines.append(f"## {scene}")
+            for line in (lines if isinstance(lines, list) else [lines]):
+                prompt_lines.append(f"- {line}")
+        if memories:
+            prompt_lines.append("")
+            prompt_lines.append("# 共同回忆")
+            for m in memories:
+                if isinstance(m, dict):
+                    prompt_lines.append(f"- {m.get('body', str(m))}")
+        doc.system_prompt = "\n".join(prompt_lines)
+        return doc
     except Exception:
         return None
 
