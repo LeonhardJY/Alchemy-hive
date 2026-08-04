@@ -43,14 +43,21 @@ def _parse_json(path: Path) -> list[Message]:
         if not content or content.startswith("["):  # 跳过图片/表情/链接等占位
             continue
         sender = _probe(rec, _SENDER_KEYS) or "unknown"
-        # 方向探测：遍历所有方向键取值后判真值
+        # 方向探测：遍历所有方向键取原始值（保留 bool/int/float/str 类型）
         if any(k in rec for k in _DIRECTION_KEYS):
-            dir_val = _probe(rec, _DIRECTION_KEYS)
-            if dir_val:
-                try:
+            dir_val = None
+            for k in _DIRECTION_KEYS:
+                if k in rec and rec[k] is not None:
+                    dir_val = rec[k]
+                    break
+            if dir_val is not None:
+                if isinstance(dir_val, bool):
+                    if dir_val:
+                        sender = "我"
+                elif isinstance(dir_val, (int, float)):
                     if int(dir_val):
                         sender = "我"
-                except (TypeError, ValueError):
+                elif isinstance(dir_val, str):
                     if infer_direction(dir_val) == "me":
                         sender = "我"
         ts = _probe(rec, _TIME_KEYS)
