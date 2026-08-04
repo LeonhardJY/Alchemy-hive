@@ -32,9 +32,22 @@ def _probe(record: dict, keys: tuple[str, ...]) -> str:
 
 def _parse_json(path: Path) -> list[Message]:
     raw = json.loads(path.read_text(encoding="utf-8"))
-    records = raw if isinstance(raw, list) else raw.get("messages", raw.get("data", []))
+    if isinstance(raw, list):
+        records = raw
+    elif isinstance(raw, dict):
+        if "messages" not in raw and "data" not in raw:
+            raise ValueError(
+                "无法识别的 WeFlow JSON 结构：期望顶层数组或 {messages:[...]} 或 {data:[...]}"
+            )
+        records = raw.get("messages", raw.get("data"))
+    else:
+        raise ValueError(
+            "无法识别的 WeFlow JSON 结构：期望顶层数组或 {messages:[...]} 或 {data:[...]}"
+        )
     if not isinstance(records, list):
-        raise ValueError("无法识别的 WeFlow JSON 结构：期望顶层数组或 {messages:[...]}")
+        raise ValueError(
+            "无法识别的 WeFlow JSON 结构：期望顶层数组或 {messages:[...]} 或 {data:[...]}"
+        )
     out: list[Message] = []
     for rec in records:
         if not isinstance(rec, dict):
@@ -58,7 +71,9 @@ def _parse_json(path: Path) -> list[Message]:
                     if int(dir_val):
                         sender = "我"
                 elif isinstance(dir_val, str):
-                    if infer_direction(dir_val) == "me":
+                    if dir_val.lower() in ("1", "true", "send", "yes"):
+                        sender = "我"
+                    elif infer_direction(dir_val) == "me":
                         sender = "我"
         ts = _probe(rec, _TIME_KEYS)
         out.append(Message(sender=sender, content=content, timestamp=ts))
@@ -69,10 +84,19 @@ _TIME_LINE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) '(.+?)'\s*$")
 
 
 def _parse_txt(path: Path) -> list[Message]:
+    text = None
+    for enc in ("utf-8-sig", "gbk", "utf-8"):
+        try:
+            text = path.read_text(encoding=enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise ValueError(f"无法解码文件: {path}（尝试 utf-8/gbk 均失败）")
     out: list[Message] = []
     current_sender = "unknown"
     current_ts = ""
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         m = _TIME_LINE.match(line)
         if m:
             current_ts, current_sender = m.groups()
