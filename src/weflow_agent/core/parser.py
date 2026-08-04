@@ -14,6 +14,15 @@ _SENDER_KEYS = ("senderUsername", "sender", "username", "nickName", "name")
 _SELF_ALIASES = ("我", "self", "me")
 
 
+def infer_direction(msg_sender: str, self_aliases: list[str] | None = None) -> str:
+    """判断发送方向。返回 "me"（本人）或 "them"（对方）。"""
+    if self_aliases is None:
+        self_aliases = list(_SELF_ALIASES)
+    if msg_sender.lower() in (a.lower() for a in self_aliases):
+        return "me"
+    return "them"
+
+
 def _probe(record: dict, keys: tuple[str, ...]) -> str:
     for k in keys:
         if k in record and record[k] is not None:
@@ -34,13 +43,16 @@ def _parse_json(path: Path) -> list[Message]:
         if not content or content.startswith("["):  # 跳过图片/表情/链接等占位
             continue
         sender = _probe(rec, _SENDER_KEYS) or "unknown"
-        # isSend=1 → 本人
+        # 方向探测：遍历所有方向键取值后判真值
         if any(k in rec for k in _DIRECTION_KEYS):
-            try:
-                if int(rec.get("isSend", rec.get("is_send", 0))):
-                    sender = "我"
-            except (TypeError, ValueError):
-                pass
+            dir_val = _probe(rec, _DIRECTION_KEYS)
+            if dir_val:
+                try:
+                    if int(dir_val):
+                        sender = "我"
+                except (TypeError, ValueError):
+                    if infer_direction(dir_val) == "me":
+                        sender = "我"
         ts = _probe(rec, _TIME_KEYS)
         out.append(Message(sender=sender, content=content, timestamp=ts))
     return out
