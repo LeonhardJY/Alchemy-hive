@@ -2,30 +2,33 @@ import httpx
 import pytest
 
 from weflow_agent.core.parser import parse_messages
-from weflow_agent.core.distill import distill, _rule_fallback
+from weflow_agent.core.distill import distill, DistillError
 
 
-def test_rule_fallback_produces_prompt():
+def test_distill_no_api_key_raises():
+    """无 api_key 时必须抛 DistillError，绝不走规则兜底。"""
     msgs = parse_messages("examples/chat.txt")
-    doc = _rule_fallback(msgs, "张書源")
-    assert doc.display_name == "张書源"
-    assert "张書源" in doc.system_prompt
-    assert "一次只说一句话" in doc.system_prompt  # 硬规则兜底必含
+    try:
+        distill(msgs, "张書源", {})  # 空配置 → 无 api_key
+        assert False, "无 key 应抛 DistillError"
+    except DistillError:
+        pass
 
 
-def test_distill_no_api_key_uses_fallback(monkeypatch):
-    """无 api_key 时绝不发起网络请求，走规则兜底。"""
+def test_distill_llm_failure_raises(monkeypatch):
+    """LLM 调用失败（网络错误）时必须抛 DistillError。"""
     msgs = parse_messages("examples/chat.txt")
-    # 锁红线：httpx.post 绝不被调用
-    call_count = 0
-    def _fake_post(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        raise RuntimeError("httpx.post 被意外调用！")
-    monkeypatch.setattr(httpx, "post", _fake_post)
-    doc = distill(msgs, "张書源", {})  # 空配置 → 无 api_key → 规则兜底
-    assert doc.system_prompt
-    assert call_count == 0  # 红线：无 key 绝不碰网络
+    config = {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}}
+
+    def fake_post(*a, **k):
+        raise httpx.ConnectError("network down")
+
+    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    try:
+        distill(msgs, "张書源", config)
+        assert False, "LLM 失败应抛 DistillError"
+    except DistillError:
+        pass
 
 
 def test_distill_llm_success_path(monkeypatch):
