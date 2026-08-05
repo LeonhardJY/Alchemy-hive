@@ -49,3 +49,25 @@ def test_e2e_export_includes_memory_when_present(tmp_path):
     snap = json.loads((tmp_path / "export" / "张書源.agent.json").read_text(encoding="utf-8"))
     assert snap["memory"]["level"] == "everything"
     assert snap["memory"]["entries"][0]["slug"] == "mem/寺庙"
+
+
+def test_e2e_export_corrupt_json_reports_clear_error(tmp_path):
+    out = str(tmp_path)
+    # 构造损坏 json（主产物存在但非法）
+    (tmp_path / "persona").mkdir(parents=True)
+    (tmp_path / "persona" / "张書源.json").write_text("{invalid", encoding="utf-8")
+    r = runner.invoke(app, ["export", "--name", "张書源", "--workdir", out])
+    assert r.exit_code != 0, r.output
+    assert "损坏" in r.output
+    assert "Traceback" not in r.output
+
+
+def test_e2e_export_schema_mismatch_reports_clear_error(tmp_path):
+    out = str(tmp_path)
+    # json 合法但缺必填字段 → ValidationError，同样报损坏类错误
+    (tmp_path / "persona").mkdir(parents=True)
+    (tmp_path / "persona" / "张書源.json").write_text("{}", encoding="utf-8")
+    r = runner.invoke(app, ["export", "--name", "张書源", "--workdir", out])
+    assert r.exit_code != 0, r.output
+    assert "损坏" in r.output
+    assert "Traceback" not in r.output

@@ -64,3 +64,23 @@ def test_snapshot_rejects_invalid_slug():
         assert False, "slug 必须是 core 或 mem/ 前缀，应抛 ValueError"
     except ValueError:
         pass
+
+
+def test_snapshot_slug_exact_match_accepts_core_and_mem():
+    # core 恰好、mem/ 后跟非空后缀（含中文）均应通过
+    for slug in ("core", "mem/寺庙还愿", "mem/a"):
+        snap = build_snapshot(_doc())
+        snap["memory"] = {"level": "everything", "entries": [{"slug": slug, "body": "x"}]}
+        validate_snapshot(snap)  # 不应抛
+
+
+def test_snapshot_rejects_slug_prefix_abuse():
+    # corefoo（前缀粘连）、mem/ 单独、core/xxx 均拒绝
+    for slug in ("corefoo", "mem/", "core/xxx"):
+        snap = build_snapshot(_doc())
+        snap["memory"] = {"level": "everything", "entries": [{"slug": slug, "body": "x"}]}
+        try:
+            validate_snapshot(snap)
+            assert False, f"slug {slug!r} 应被拒绝"
+        except ValueError:
+            pass

@@ -9,7 +9,7 @@ _FORMAT = "buzz-agent-snapshot"
 _VERSION = 1
 
 _MEMORY_LEVELS = ("none", "core", "everything")
-_SLUG_RE = re.compile(r"^(core|mem/)")
+_SLUG_RE = re.compile(r"^(core$|mem/.+)$")
 
 
 def build_snapshot(doc: PersonaDoc) -> dict:
