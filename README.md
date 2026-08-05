@@ -1,6 +1,6 @@
 # weflow-agent
 
-从 WeFlow 导出的微信聊天记录蒸馏出「人物 AI agent」，一键导出为 buzz `.agent.json`，拖进 Buzz 桌面端即可导入。本地优先：默认（不配置模型）走纯本地规则兜底，零网络调用；配置模型后蒸馏阶段会把聊天样本发往你填写的模型地址。
+从 WeFlow 导出的微信聊天记录蒸馏出「人物 AI agent」，一键导出为 buzz `.agent.json`，拖进 Buzz 桌面端即可导入。蒸馏必须配置 LLM（OpenAI-compatible），支持 CLI 和桌面 GUI 两种方式。
 
 ## 快速上手（10 分钟）
 
@@ -12,16 +12,31 @@ git clone https://github.com/<你的仓库>/weflow-agent && cd weflow-agent
 pip install -e .
 # 方式二：PyPI（发布后可用）
 pip install weflow-agent
+```
+
+### 图形界面（推荐）
+
+```bash
+weflow-agent gui
+```
+
+在界面中填写聊天文件路径、人物名，以及 base_url / api_key / model，点击「开始蒸馏」即可一键完成 import → distill → export。产物在 `build/export/<人物名>.agent.json`，拖入 buzz 桌面端导入。
+
+### 命令行
+
+```bash
 # 1. 解析聊天记录
 weflow-agent import chat.json --name 张書源
-# 2. 蒸馏 persona（配置 API key 获得最佳效果；不配则用规则兜底）
+# 2. 蒸馏 persona（需配置模型 key）
 weflow-agent distill --name 张書源
 # 3. 导出 buzz 快照
 weflow-agent export --name 张書源
 # 4. 打开 Buzz 桌面端 My Agents → 把 build/export/张書源.agent.json 拖进去
 ```
 
-## 配置 LLM（可选，推荐）
+## 配置 LLM（必需）
+
+蒸馏阶段会把你指定的人物聊天样本发往所配置的模型服务地址进行 persona 分析，**必须**配置 API key，无 key 会报错。
 
 复制 `.weflow-agent/config.toml.example` 为 `.weflow-agent/config.toml`，填入 OpenAI-compatible 的模型地址与 key（如 DeepSeek、OpenAI、本地 vLLM）：
 
@@ -32,14 +47,27 @@ api_key = "sk-..."
 model = "deepseek-chat"
 ```
 
+使用图形界面时，直接在界面上填写这三个字段即可，无需修改配置文件。
+
+## 图形界面
+
+`weflow-agent gui` 启动 Tkinter 桌面窗口，提供以下功能：
+
+- **聊天文件**：选择 WeFlow 导出 JSON 或微信 txt
+- **人物名**：人物显示名称
+- **模型配置**：base_url、api_key、model（必填）
+- **一键蒸馏**：import → distill → export 三步串联执行，日志实时输出
+- **产物**：`build/export/<人物名>.agent.json`
+
 ## 命令
 
 | 命令 | 作用 |
 |---|---|
+| `weflow-agent gui` | 启动桌面图形界面（推荐） |
 | `weflow-agent import <文件> --name X` | 解析聊天 → 结构化消息 |
-| `weflow-agent distill --name X` | 蒸馏 persona（LLM / 规则兜底） |
+| `weflow-agent distill --name X` | 蒸馏 persona（LLM） |
 | `weflow-agent export --name X` | 导出 `.agent.json` |
 
 ## 隐私
 
-默认不配模型时零网络调用；配置模型（推荐以获得更真实的表达）后，蒸馏会把你指定的人物聊天样本发送到所配置的模型服务地址，请确认信任该服务。产物含真实聊天内容，**分享到 GitHub 或发给他人前请自行脱敏**（替换姓名/号码）。
+蒸馏会把你指定的人物聊天样本发送到所配置的模型服务地址，请确认信任该服务。产物含真实聊天内容，**分享到 GitHub 或发给他人前请自行脱敏**（替换姓名/号码）。
