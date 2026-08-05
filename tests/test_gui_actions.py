@@ -44,6 +44,20 @@ def test_gui_actions_pipeline(mock_llm, tmp_path):
     assert (tmp_path / "export" / "张書源.agent.json").exists()
 
 
+def test_gui_actions_pipeline_writes_parsed_json(mock_llm, tmp_path):
+    run_pipeline(
+        "examples/chat.txt",
+        "张書源",
+        {"base_url": "http://x", "api_key": "k", "model": "m"},
+        str(tmp_path),
+    )
+    parsed_path = tmp_path / "parsed" / "张書源.json"
+    assert parsed_path.exists(), "管线应把解析产物写入 parsed/{name}.json"
+    msgs = json.loads(parsed_path.read_text(encoding="utf-8"))
+    assert isinstance(msgs, list) and len(msgs) > 0
+    assert "sender" in msgs[0] and "content" in msgs[0] and "timestamp" in msgs[0]
+
+
 def test_gui_actions_no_key_raises(tmp_path):
     try:
         run_pipeline("examples/chat.txt", "张書源", {}, str(tmp_path))

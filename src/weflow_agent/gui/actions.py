@@ -1,4 +1,5 @@
 """GUI 复用的蒸馏动作：把 import→distill→export 串成一个可测试的管线。"""
+import json
 from pathlib import Path
 
 from ..core.distill import distill, DistillError
@@ -15,6 +16,12 @@ def run_pipeline(chat_path: str, name: str, model_config: dict, workdir: str) ->
     parsed_dir.mkdir(parents=True, exist_ok=True)
     msgs = parse_messages(chat_path)
     logs.append(f"[import] 解析 {len(msgs)} 条消息")
+    parsed_path = parsed_dir / f"{name}.json"
+    parsed_path.write_text(
+        json.dumps([m.model_dump() for m in msgs], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    logs.append(f"[import] 已写 parsed/{name}.json")
 
     cfg = {"model": model_config}
     doc = distill(msgs, name, cfg)

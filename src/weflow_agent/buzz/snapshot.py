@@ -10,6 +10,13 @@ _VERSION = 1
 
 _MEMORY_LEVELS = ("none", "core", "everything")
 _SLUG_RE = re.compile(r"^(core$|mem/.+)$")
+_PATH_SEP_RE = re.compile(r"[/\\\\]")
+_WINDOWS_RESERVED_RE = re.compile(r'[\\\\/:*?"<>|]')
+
+
+def _safe_filename(name: str) -> str:
+    """把任意名字清洗为安全文件名：非法字符替换为下划线，杜绝路径穿越。"""
+    return _WINDOWS_RESERVED_RE.sub("_", name)
 
 
 def build_snapshot(doc: PersonaDoc) -> dict:
@@ -54,6 +61,10 @@ def validate_snapshot(snapshot: dict) -> None:
         raise ValueError("definition.name 不能为空")
     if not snapshot["profile"]["displayName"].strip():
         raise ValueError("profile.displayName 不能为空")
+    for field in ("definition.name", "profile.displayName"):
+        value = snapshot["definition"]["name"] if field == "definition.name" else snapshot["profile"]["displayName"]
+        if _PATH_SEP_RE.search(value):
+            raise ValueError(f"{field} 不能包含路径分隔符，收到: {value!r}")
     memory = snapshot.get("memory", {})
     level = memory.get("level", "none")
     if level not in _MEMORY_LEVELS:
@@ -70,9 +81,11 @@ def validate_snapshot(snapshot: dict) -> None:
 
 
 def write_snapshot_json(doc: PersonaDoc, out_path: str) -> str:
-    """写 .agent.json 并返回文件路径。文件名：{displayName}.agent.json。"""
+    """写 .agent.json 并返回文件路径。文件名基于用户输入的 doc.name（经安全清洗），
+    display_name 只进 profile 显示、不影响文件名。"""
     snap = build_snapshot(doc)
     validate_snapshot(snap)
-    p = Path(out_path) / f"{doc.display_name}.agent.json"
+    safe = _safe_filename(doc.name)
+    p = Path(out_path) / f"{safe}.agent.json"
     p.write_text(json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(p)

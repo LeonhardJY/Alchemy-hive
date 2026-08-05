@@ -23,7 +23,14 @@ def distill_persona(name: str, workdir: str, config: dict | str | None) -> None:
     if parsed_path is None:
         raise typer.BadParameter(f"未找到解析产物 {Path(workdir)/name}.json，请先运行 import")
     msgs = [Message(**m) for m in json.loads(parsed_path.read_text(encoding="utf-8"))]
-    cfg = load_config(config) if isinstance(config, str) else (config or {})
+    if isinstance(config, str):
+        cfg = load_config(config)
+    elif config is None:
+        cfg = {}
+    elif isinstance(config, dict):
+        cfg = config
+    else:
+        raise typer.BadParameter(f"配置必须是 dict 或配置文件路径，收到 {type(config).__name__}")
     doc = distill(msgs, name, cfg)
     persona_dir = Path(workdir) / "persona"
     persona_dir.mkdir(parents=True, exist_ok=True)
