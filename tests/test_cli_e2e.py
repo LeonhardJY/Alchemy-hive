@@ -33,3 +33,19 @@ def test_distill_persists_persona_json_with_memory(tmp_path):
     assert json_path.exists(), "distill 应持久化完整 PersonaDoc JSON"
     doc = json.loads(json_path.read_text(encoding="utf-8"))
     assert "system_prompt" in doc and "memory" in doc  # 完整字段
+
+
+def test_e2e_export_includes_memory_when_present(tmp_path):
+    out = str(tmp_path)
+    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    runner.invoke(app, ["distill", "--name", "张書源", "--workdir", out])
+    # 手动注入一条记忆，模拟 LLM 蒸馏产出的记忆（规则兜底无记忆）
+    p = tmp_path / "persona" / "张書源.json"
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    doc["memory"] = [{"slug": "mem/寺庙", "body": "跟妈妈去寺庙还愿"}]
+    p.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    r = runner.invoke(app, ["export", "--name", "张書源", "--workdir", out])
+    assert r.exit_code == 0, r.output
+    snap = json.loads((tmp_path / "export" / "张書源.agent.json").read_text(encoding="utf-8"))
+    assert snap["memory"]["level"] == "everything"
+    assert snap["memory"]["entries"][0]["slug"] == "mem/寺庙"
