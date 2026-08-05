@@ -29,6 +29,7 @@ def run_blindtest(name: str, workdir: str, config: dict, n: int) -> None:
         typer.echo(f"  真实回复: {pair['real_reply'].content}")
         agent_reply = ask_agent(pair["context"], name, system_prompt, config)
         typer.echo(f"  agent 接话: {agent_reply}")
+        aborted = False
         while True:
             try:
                 score = int(input("相似度评分 (1-5): "))
@@ -36,8 +37,15 @@ def run_blindtest(name: str, workdir: str, config: dict, n: int) -> None:
                     ratings[i] = score
                     break
                 typer.echo("请输入 1-5 的整数。")
-            except (ValueError, EOFError):
+            except ValueError:
                 typer.echo("请输入 1-5 的整数。")
+            except EOFError:
+                # stdin 已关闭（如管道输入不足）：停止打分，避免死循环
+                typer.echo("输入流已关闭，终止盲测。")
+                aborted = True
+                break
+        if aborted:
+            break
 
     summary = rate_pairs(pairs, ["agent接话"] * len(pairs), ratings)
     typer.echo(f"\n盲测完成：共 {summary['count']} 条，平均分 {summary['average']}/5")

@@ -113,3 +113,14 @@ def test_blindtest_command(monkeypatch, tmp_path):
     r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", cfg, "--n", "1"])
     assert r.exit_code == 0, r.output
     assert "平均分" in r.output
+
+
+def test_blindtest_no_key_reports_clean_error(tmp_path):
+    # 无 [model] key：load_config 返回空 dict → ask_agent 抛 DistillError
+    # 全局处理应输出一句中文错误并退出 1，绝不渲染裸 traceback
+    out = str(tmp_path)
+    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", "no-such.toml", "--n", "1"])
+    assert r.exit_code != 0, r.output
+    assert "Traceback" not in r.output
+    assert "未配置模型 API key" in r.output

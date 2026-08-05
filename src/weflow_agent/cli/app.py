@@ -5,12 +5,25 @@ from .import_cmd import import_chat
 from .distill_cmd import distill_persona
 from .export_cmd import export_buzz
 from .blindtest_cmd import run_blindtest
-from ..core.distill import load_config
+from ..core.distill import load_config, DistillError
 
 app = typer.Typer(
     help="weflow-agent: 从微信聊天记录蒸馏人物 AI agent，导出 buzz 快照。",
     no_args_is_help=True,
+    pretty_exceptions_enable=False,  # 用户命令行不渲染巨型 rich traceback（红线：不裸 traceback）
 )
+
+
+def _run_command(fn, *args, **kwargs):
+    """执行命令主体：DistillError 渲染为一句中文错误并退出 1，避免裸 traceback。
+
+    typer 0.24 无 exception_handler 全局钩子，故由可能抛 DistillError 的命令统一走此入口。
+    """
+    try:
+        fn(*args, **kwargs)
+    except DistillError as e:
+        typer.echo(f"错误: {e}", err=True)
+        raise typer.Exit(1) from e
 
 @app.command()
 def init(config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件路径")):
@@ -33,7 +46,7 @@ def distill_cmd(
     config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件"),
 ):
     """蒸馏 PersonaDoc + persona skill。"""
-    distill_persona(name, workdir, load_config(config_path))
+    _run_command(distill_persona, name, workdir, load_config(config_path))
 
 @app.command("export")
 def export_cmd(
@@ -51,7 +64,7 @@ def blindtest_cmd(
     n: int = typer.Option(5, "--n", help="抽样片段数"),
 ):
     """盲测对拍：真实回复 vs agent 接话，人工评分。"""
-    run_blindtest(name, workdir, load_config(config_path), n)
+    _run_command(run_blindtest, name, workdir, load_config(config_path), n)
 
 @app.command("gui")
 def gui_cmd():
