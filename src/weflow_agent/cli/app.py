@@ -82,8 +82,8 @@ def blindtest_cmd(
 
 @app.command("gui")
 def gui_cmd():
-    """启动桌面图形界面。"""
-    from ..gui.app import run_gui
+    """启动桌面图形界面（pywebview 玻璃拟态）。"""
+    from ..gui.webview_app import run_gui
     run_gui()
 
 def main() -> None:
