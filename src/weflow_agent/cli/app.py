@@ -3,7 +3,7 @@ import typer
 
 from .import_cmd import import_chat
 from .distill_cmd import distill_persona
-from .export_cmd import export_buzz
+from .export_cmd import export_buzz, export_pack
 from .blindtest_cmd import run_blindtest
 from ..core.distill import load_config, DistillError
 
@@ -57,6 +57,15 @@ def export_cmd(
 ):
     """导出 buzz .agent.json 快照。"""
     _run_command(export_buzz, name, workdir)
+
+@app.command("pack")
+def pack_cmd(
+    names: str = typer.Option(..., "--names", help="逗号分隔的人物名，如 张書源,张鹏博"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    channel: str = typer.Option("#friends", "--channel", help="群组频道名"),
+):
+    """批量导出多 agent 快照 + 社群清单。"""
+    _run_command(export_pack, [n.strip() for n in names.split(",") if n.strip()], workdir, channel)
 
 @app.command("blindtest")
 def blindtest_cmd(

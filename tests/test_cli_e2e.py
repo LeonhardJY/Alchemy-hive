@@ -181,6 +181,30 @@ def test_blindtest_no_key_reports_clean_error(tmp_path, examples_dir):
     assert "未配置模型" in r.output and "API key" in r.output
 
 
+def test_export_pack_generates_multiple_agents(tmp_path, monkeypatch, examples_dir):
+    _fake_llm(monkeypatch)
+    out = str(tmp_path)
+    cfg = _write_fake_cfg(tmp_path)
+    for nm in ("张書源", "张鹏博"):
+        r1 = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", nm, "--out-dir", out])
+        assert r1.exit_code == 0, r1.output
+        r2 = runner.invoke(app, ["distill", "--name", nm, "--workdir", out, "--config", cfg])
+        assert r2.exit_code == 0, r2.output
+    r3 = runner.invoke(app, ["pack", "--names", "张書源,张鹏博", "--workdir", out])
+    assert r3.exit_code == 0, r3.output
+    assert (tmp_path / "export" / "张書源.agent.json").exists()
+    assert (tmp_path / "export" / "张鹏博.agent.json").exists()
+    comm = json.loads((tmp_path / "export" / "community.json").read_text(encoding="utf-8"))
+    assert len(comm["agents"]) == 2
+
+
+def test_export_pack_missing_persona_errors(tmp_path):
+    out = str(tmp_path)
+    r = runner.invoke(app, ["pack", "--names", "不存在的人", "--workdir", out])
+    assert r.exit_code != 0
+    assert "distill" in r.output
+
+
 def test_e2e_import_missing_file_reports_clean_error(tmp_path):
     # import 一个不存在的文件：FileNotFoundError 应被 CLI 统一错误边界捕获，
     # 输出一句中文错误并退出非 0，绝不裸 traceback
