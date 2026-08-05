@@ -6,6 +6,7 @@ import typer
 
 from ..core.models import Message
 from ..core.blindtest import extract_pairs, ask_agent, rate_pairs
+from ..core.safe import safe_filename
 from .distill_cmd import _find_parsed
 
 # 打分用模块级 input 引用：便于测试 monkeypatch weflow_agent.cli.blindtest_cmd.input
@@ -14,13 +15,14 @@ input = input
 
 def run_blindtest(name: str, workdir: str, config: dict, n: int) -> None:
     """逐条展示真实回复与 agent 接话，人工打 1-5 分，最后输出平均分。"""
+    safe = safe_filename(name)
     parsed_path = _find_parsed(Path(workdir), name)
     if parsed_path is None:
         raise typer.BadParameter(
-            f"未找到解析产物 {Path(workdir)/name}.json 或 {Path(workdir)/'parsed'/name}.json，请先运行 import"
+            f"未找到解析产物 {Path(workdir)/safe}.json 或 {Path(workdir)/'parsed'/safe}.json，请先运行 import"
         )
     msgs = [Message(**m) for m in json.loads(parsed_path.read_text(encoding="utf-8"))]
-    persona_path = Path(workdir) / "persona" / f"{name}.md"
+    persona_path = Path(workdir) / "persona" / f"{safe}.md"
     system_prompt = persona_path.read_text(encoding="utf-8") if persona_path.exists() else f"你是{name}。"
 
     pairs = extract_pairs(msgs, n=n)

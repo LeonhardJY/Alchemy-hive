@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..core.distill import distill, DistillError
 from ..core.parser import parse_messages
+from ..core.safe import safe_filename
 from ..buzz.snapshot import write_snapshot_json
 
 
@@ -11,17 +12,18 @@ def run_pipeline(chat_path: str, name: str, model_config: dict, workdir: str) ->
     """执行完整蒸馏管线，返回步骤日志。model_config 形如 {"base_url","api_key","model"}。"""
     logs: list[str] = []
     root = Path(workdir)
+    safe = safe_filename(name)
 
     parsed_dir = root / "parsed"
     parsed_dir.mkdir(parents=True, exist_ok=True)
     msgs = parse_messages(chat_path)
     logs.append(f"[import] 解析 {len(msgs)} 条消息")
-    parsed_path = parsed_dir / f"{name}.json"
+    parsed_path = parsed_dir / f"{safe}.json"
     parsed_path.write_text(
         json.dumps([m.model_dump() for m in msgs], ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    logs.append(f"[import] 已写 parsed/{name}.json")
+    logs.append(f"[import] 已写 parsed/{safe}.json")
 
     cfg = {"model": model_config}
     doc = distill(msgs, name, cfg)
@@ -29,9 +31,9 @@ def run_pipeline(chat_path: str, name: str, model_config: dict, workdir: str) ->
 
     persona_dir = root / "persona"
     persona_dir.mkdir(parents=True, exist_ok=True)
-    (persona_dir / f"{name}.md").write_text(doc.system_prompt, encoding="utf-8")
-    (persona_dir / f"{name}.json").write_text(doc.model_dump_json(indent=2), encoding="utf-8")
-    logs.append(f"[distill] 已写 persona/{name}.md + .json")
+    (persona_dir / f"{safe}.md").write_text(doc.system_prompt, encoding="utf-8")
+    (persona_dir / f"{safe}.json").write_text(doc.model_dump_json(indent=2), encoding="utf-8")
+    logs.append(f"[distill] 已写 persona/{safe}.md + .json")
 
     export_dir = root / "export"
     export_dir.mkdir(parents=True, exist_ok=True)

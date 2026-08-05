@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from weflow_agent.core.models import PersonaDoc
-from weflow_agent.buzz.snapshot import build_snapshot, validate_snapshot, write_snapshot_json, _safe_filename
+from weflow_agent.core.safe import safe_filename
+from weflow_agent.buzz.snapshot import build_snapshot, validate_snapshot, write_snapshot_json
 
 
 def _doc() -> PersonaDoc:
@@ -106,7 +107,7 @@ def test_write_snapshot_filename_sanitizes_illegal_chars(tmp_path):
     written = Path(path)
     assert written.parent == tmp_path, f"不应产生子目录，实际 {written.parent}"
     assert written.name == "a_b.agent.json", f"非法字符应替换为下划线，实际 {written.name}"
-    assert _safe_filename("../outside") == ".._outside"
+    assert safe_filename("../outside") == ".._outside"
     assert (tmp_path / "a_b.agent.json").exists()
 
 

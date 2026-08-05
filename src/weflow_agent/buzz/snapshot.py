@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from ..core.models import PersonaDoc
+from ..core.safe import safe_filename
 
 _FORMAT = "buzz-agent-snapshot"
 _VERSION = 1
@@ -11,12 +12,6 @@ _VERSION = 1
 _MEMORY_LEVELS = ("none", "core", "everything")
 _SLUG_RE = re.compile(r"^(core$|mem/.+)$")
 _PATH_SEP_RE = re.compile(r"[/\\\\]")
-_WINDOWS_RESERVED_RE = re.compile(r'[\\\\/:*?"<>|]')
-
-
-def _safe_filename(name: str) -> str:
-    """把任意名字清洗为安全文件名：非法字符替换为下划线，杜绝路径穿越。"""
-    return _WINDOWS_RESERVED_RE.sub("_", name)
 
 
 def build_snapshot(doc: PersonaDoc) -> dict:
@@ -85,7 +80,7 @@ def write_snapshot_json(doc: PersonaDoc, out_path: str) -> str:
     display_name 只进 profile 显示、不影响文件名。"""
     snap = build_snapshot(doc)
     validate_snapshot(snap)
-    safe = _safe_filename(doc.name)
+    safe = safe_filename(doc.name)
     p = Path(out_path) / f"{safe}.agent.json"
     p.write_text(json.dumps(snap, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(p)
