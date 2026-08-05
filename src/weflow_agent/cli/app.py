@@ -42,6 +42,12 @@ def export_cmd(
     """导出 buzz .agent.json 快照。"""
     export_buzz(name, workdir)
 
+@app.command("gui")
+def gui_cmd():
+    """启动桌面图形界面。"""
+    from ..gui.app import run_gui
+    run_gui()
+
 def main() -> None:
     app()
 
