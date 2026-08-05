@@ -1,4 +1,7 @@
+import pytest
+
 from weflow_agent.core.parser import parse_messages
+from weflow_agent.core.distill import DistillError
 from weflow_agent.core.blindtest import extract_pairs, rate_pairs, ask_agent
 
 
@@ -28,3 +31,40 @@ def test_ask_agent_uses_model(monkeypatch):
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
     reply = ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
     assert reply == "走，吃饭"
+
+
+def test_ask_agent_missing_config_raises_distill_error():
+    # 缺 base_url / 缺 model / 全缺（空配置）都应抛 DistillError，而非 KeyError 裸异常
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {"model": {"api_key": "k", "model": "m"}})
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k"}})
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {})
+
+
+def test_ask_agent_network_error_raises_distill_error(monkeypatch):
+    # httpx.post 抛 ConnectError（httpx.HTTPError 子类）→ 转 DistillError
+    import httpx
+
+    def raise_connect(*a, **k):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", raise_connect)
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+
+
+def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
+    # 响应 JSON 无法解析（JSONDecodeError，ValueError 子类）→ 转 DistillError
+    import json as _json
+
+    def bad_json(self):
+        raise _json.JSONDecodeError("Expecting value", "{bad", 0)
+
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": lambda self: None, "json": bad_json})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})

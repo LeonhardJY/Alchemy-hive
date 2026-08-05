@@ -123,4 +123,24 @@ def test_blindtest_no_key_reports_clean_error(tmp_path):
     r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", "no-such.toml", "--n", "1"])
     assert r.exit_code != 0, r.output
     assert "Traceback" not in r.output
-    assert "未配置模型 API key" in r.output
+    assert "未配置模型" in r.output and "API key" in r.output
+
+
+def test_blindtest_default_out_dir_and_workdir(tmp_path, monkeypatch):
+    # import 用默认 out-dir（build/parsed），blindtest 用默认 workdir（build）：
+    # 应能找到解析产物并跑到打分阶段（mock httpx + 人工打分输入）
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": lambda self: None,
+                              "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
+    chat = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "examples", "chat.txt"))
+    monkeypatch.chdir(tmp_path)
+    cfg = _write_fake_cfg(tmp_path)  # blindtest 需真实 [model] 配置，否则无 key 抛 DistillError
+    r1 = runner.invoke(app, ["import", chat, "--name", "张書源"])
+    assert r1.exit_code == 0, r1.output
+    assert (tmp_path / "build" / "parsed" / "张書源.json").exists()
+    r2 = runner.invoke(app, ["blindtest", "--name", "张書源", "--config", cfg, "--n", "1"])
+    assert r2.exit_code == 0, r2.output
+    assert "平均分" in r2.output
