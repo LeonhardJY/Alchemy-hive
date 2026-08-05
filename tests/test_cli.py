@@ -26,8 +26,8 @@ def test_distill_persona_rejects_non_dict_non_str_config(tmp_path):
     parsed = tmp_path / "parsed"
     parsed.mkdir(parents=True)
     msg = {"sender": "我", "content": "你好", "timestamp": "2026-01-01 00:00:00"}
-    (parsed / "张書源.json").write_text(
+    (parsed / "小明.json").write_text(
         json.dumps([msg], ensure_ascii=False), encoding="utf-8"
     )
     with pytest.raises(typer.BadParameter, match="配置必须是 dict 或配置文件路径"):
-        distill_persona("张書源", str(tmp_path), Path("somewhere/config.toml"))
+        distill_persona("小明", str(tmp_path), Path("somewhere/config.toml"))

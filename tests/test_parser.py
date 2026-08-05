@@ -20,7 +20,7 @@ def test_parse_weflow_json():
 def test_parse_wechat_txt():
     msgs = parse_messages(str(EXAMPLES_DIR / "chat.txt"))
     assert len(msgs) >= 2
-    assert msgs[0].sender == "张書源"
+    assert msgs[0].sender == "小明"
 
 
 def test_parse_detects_direction():
@@ -89,11 +89,11 @@ def test_direction_falsy_non_alias_keeps_sender(tmp_path):
     """isSend=false 且 sender 非本人别名 → 保持原 sender，不被误归一化。"""
     f = tmp_path / "falsy_other.json"
     f.write_text(json.dumps([
-        {"isSend": 0, "senderUsername": "张書源", "createTime": "2023-01-01 00:00:00", "msgContent": "对方消息"}
+        {"isSend": 0, "senderUsername": "小明", "createTime": "2023-01-01 00:00:00", "msgContent": "对方消息"}
     ], ensure_ascii=False), encoding="utf-8")
     msgs = parse_messages(str(f))
     assert len(msgs) == 1
-    assert msgs[0].sender == "张書源"
+    assert msgs[0].sender == "小明"
 
 
 def test_direction_truthy_overrides_non_alias_sender(tmp_path):
@@ -128,7 +128,7 @@ def test_parse_gbk_txt(tmp_path):
     """GBK 编码的微信导出 txt（含中文与 '时间戳 发送者' 行）应能解析出消息。"""
     f = tmp_path / "gbk.txt"
     content = (
-        "2023-07-24 09:29:09 '张書源'\n"
+        "2023-07-24 09:29:09 '小明'\n"
         "epic又要送了？\n"
         "2023-07-24 09:31:53 '我'\n"
         "我看看\n"
@@ -136,7 +136,7 @@ def test_parse_gbk_txt(tmp_path):
     f.write_bytes(content.encode("gbk"))
     msgs = parse_messages(str(f))
     assert len(msgs) == 2
-    assert msgs[0].sender == "张書源"
+    assert msgs[0].sender == "小明"
     assert msgs[0].content == "epic又要送了？"
     assert msgs[1].sender == "我"
     assert msgs[1].content == "我看看"

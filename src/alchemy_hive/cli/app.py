@@ -5,7 +5,8 @@ from .import_cmd import import_chat
 from .distill_cmd import distill_persona
 from .export_cmd import export_buzz, export_pack
 from .blindtest_cmd import run_blindtest
-from ..core.distill import load_config, DistillError
+from ..core.distill import load_config
+from ..core.llm import LLMError
 
 app = typer.Typer(
     help="alchemy-hive: 从微信聊天记录蒸馏人物 AI agent，导出 buzz 快照。",
@@ -15,7 +16,7 @@ app = typer.Typer(
 
 
 def _run_command(fn, *args, **kwargs):
-    """执行命令主体：业务/IO 异常（DistillError、FileNotFoundError、ValueError、OSError）统一渲染为
+    """执行命令主体：业务/IO 异常（LLMError、FileNotFoundError、ValueError、OSError）统一渲染为
     一句中文错误并退出 1，避免裸 traceback。
 
     typer 0.24 无 exception_handler 全局钩子，故由可能抛异常的 import/distill/export/blindtest 命令统一走此入口。
@@ -23,7 +24,7 @@ def _run_command(fn, *args, **kwargs):
     """
     try:
         fn(*args, **kwargs)
-    except (FileNotFoundError, ValueError, OSError, DistillError) as e:
+    except (FileNotFoundError, ValueError, OSError, LLMError) as e:
         typer.echo(f"错误: {e}", err=True)
         raise typer.Exit(1) from e
 
@@ -54,21 +55,23 @@ def distill_cmd(
 def export_cmd(
     name: str = typer.Option(..., "--name", help="人物名"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    with_memory: bool = typer.Option(False, "--with-memory", help="导出共同记忆（明文、含真实内容）"),
 ):
     """导出 buzz .agent.json 快照。"""
-    _run_command(export_buzz, name, workdir)
+    _run_command(export_buzz, name, workdir, with_memory)
 
 @app.command("pack")
 def pack_cmd(
-    names: str = typer.Option(..., "--names", help="逗号分隔的人物名，如 张書源,张鹏博"),
+    names: str = typer.Option(..., "--names", help="逗号分隔的人物名，如 小明,小红"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
     channel: str = typer.Option("#friends", "--channel", help="群组频道名"),
+    with_memory: bool = typer.Option(False, "--with-memory", help="导出共同记忆（明文、含真实内容）"),
 ):
     """批量导出多 agent 快照 + 社群清单。"""
     name_list = [n.strip() for n in names.split(",") if n.strip()]
     if not name_list:
         raise typer.BadParameter("--names 至少需要一个名字")
-    _run_command(export_pack, name_list, workdir, channel)
+    _run_command(export_pack, name_list, workdir, channel, with_memory)
 
 @app.command("blindtest")
 def blindtest_cmd(
@@ -79,6 +82,17 @@ def blindtest_cmd(
 ):
     """盲测对拍：真实回复 vs agent 接话，人工评分。"""
     _run_command(run_blindtest, name, workdir, load_config(config_path), n)
+
+@app.command("buzz-import")
+def buzz_import_cmd(
+    name: str = typer.Option(..., "--name", help="人物名"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+):
+    """把导出的 .agent.json 送到 buzz：打开导出文件夹 + 复制完整路径。"""
+    from ..buzz.importing import import_to_buzz
+    for line in import_to_buzz(name, workdir):
+        typer.echo(line)
+
 
 @app.command("gui")
 def gui_cmd():

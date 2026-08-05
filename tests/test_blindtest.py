@@ -60,8 +60,8 @@ def test_ask_agent_uses_model(monkeypatch):
         captured["url"] = a[0]
         return _ok_resp()
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
-    reply = ask_agent([], "张書源", "你是张書源。", _CONFIG)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    reply = ask_agent([], "小明", "你是小明。", _CONFIG)
     assert reply == "走，吃饭"
     url = captured["url"]
     assert url.startswith(_CONFIG["model"]["base_url"]), url
@@ -75,8 +75,8 @@ def test_ask_agent_null_content_returns_empty(monkeypatch):
     def fake_post(*a, **k):
         return _ok_resp(content=None)
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
-    assert ask_agent([], "张書源", "你是张書源。", _CONFIG) == ""
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    assert ask_agent([], "小明", "你是小明。", _CONFIG) == ""
 
 
 def test_ask_agent_non_str_content_coerced(monkeypatch):
@@ -84,18 +84,18 @@ def test_ask_agent_non_str_content_coerced(monkeypatch):
     def fake_post(*a, **k):
         return _ok_resp(content=42)
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
-    assert ask_agent([], "张書源", "你是张書源。", _CONFIG) == "42"
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    assert ask_agent([], "小明", "你是小明。", _CONFIG) == "42"
 
 
 def test_ask_agent_missing_config_raises_distill_error():
     # 缺 base_url / 缺 model / 全缺（空配置）都应抛 DistillError，而非 KeyError 裸异常
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {"model": {"api_key": "k", "model": "m"}})
+        ask_agent([], "小明", "你是小明。", {"model": {"api_key": "k", "model": "m"}})
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k"}})
+        ask_agent([], "小明", "你是小明。", {"model": {"base_url": "http://x", "api_key": "k"}})
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {})
+        ask_agent([], "小明", "你是小明。", {})
 
 
 def test_ask_agent_network_error_raises_distill_error(monkeypatch):
@@ -103,9 +103,9 @@ def test_ask_agent_network_error_raises_distill_error(monkeypatch):
     def raise_connect(*a, **k):
         raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", raise_connect)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", raise_connect)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", _CONFIG)
+        ask_agent([], "小明", "你是小明。", _CONFIG)
 
 
 def test_ask_agent_http_status_error_raises_distill_error(monkeypatch):
@@ -120,9 +120,9 @@ def test_ask_agent_http_status_error_raises_distill_error(monkeypatch):
     def fake_post(*a, **k):
         return type("R", (), {"raise_for_status": raise_status})()
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", _CONFIG)
+        ask_agent([], "小明", "你是小明。", _CONFIG)
 
 
 def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
@@ -135,9 +135,9 @@ def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
     def fake_post(*a, **k):
         return type("R", (), {"raise_for_status": lambda self: None, "json": bad_json})()
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", _CONFIG)
+        ask_agent([], "小明", "你是小明。", _CONFIG)
 
 
 def test_ask_agent_empty_choices_raises_distill_error(monkeypatch):
@@ -146,9 +146,9 @@ def test_ask_agent_empty_choices_raises_distill_error(monkeypatch):
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": []}})()
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", _CONFIG)
+        ask_agent([], "小明", "你是小明。", _CONFIG)
 
 
 def test_ask_agent_list_response_raises_distill_error(monkeypatch):
@@ -156,6 +156,6 @@ def test_ask_agent_list_response_raises_distill_error(monkeypatch):
     def fake_post(*a, **k):
         return type("R", (), {"raise_for_status": lambda self: None, "json": lambda self: []})()
 
-    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", _CONFIG)
+        ask_agent([], "小明", "你是小明。", _CONFIG)

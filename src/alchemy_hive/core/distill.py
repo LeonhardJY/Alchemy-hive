@@ -2,13 +2,12 @@
 import json
 import re
 
-import httpx
-
 from .models import Message, PersonaDoc
-from .prompt import DISTILL_PROMPT
+from .prompt import DISTILL_PROMPT, build_system_prompt
+from .llm import chat_completion, LLMError
 
 
-class DistillError(RuntimeError):
+class DistillError(LLMError):
     """蒸馏失败：缺少模型配置或 LLM 调用失败。"""
 
 
@@ -40,61 +39,29 @@ def _sample_text(messages: list[Message], limit: int = 200) -> str:
 
 def _llm_distill(messages: list[Message], name: str, config: dict) -> PersonaDoc | None:
     """调 OpenAI-compatible 接口蒸馏；失败返回 None（由 distill 抛 DistillError）。"""
-    model = (config.get("model") or {}).get("base_url"), (config.get("model") or {}).get("api_key"), (config.get("model") or {}).get("model")
-    base_url, api_key, model_name = model
-    if not api_key:
+    model = config.get("model") or {}
+    if not model.get("api_key"):
         return None
     prompt = DISTILL_PROMPT.replace("{name}", name).replace("{chat_sample}", _sample_text(messages))
     try:
-        resp = httpx.post(
-            f"{base_url.rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.4,
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
+        content = chat_completion(config, [{"role": "user", "content": prompt}], temperature=0.4, json_mode=True)
+    except LLMError:
+        return None
+    try:
         payload = json.loads(re.sub(r"```(json)?|```", "", content).strip())
         data = dict(payload)
-        data["name"] = name                      # 强制参数名
-        data.setdefault("display_name", name)    # 有则用模型的，无则用参数
-        clean = {k: v for k, v in data.items() if k in PersonaDoc.model_fields}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    data["name"] = name                      # 强制参数名
+    data.setdefault("display_name", name)    # 有则用模型的，无则用参数
+    clean = {k: v for k, v in data.items() if k in PersonaDoc.model_fields}
+    try:
         doc = PersonaDoc(**clean)
-        # C2: 把 LLM 结构化字段渲染成 system_prompt，避免 distill() 守卫判空走兜底
-        rules = data.get("expression_rules") or doc.expression_rules or []
-        phrases = data.get("signature_phrases") or doc.signature_phrases or []
-        repls = data.get("example_replies") or doc.example_replies or {}
-        memories = data.get("memory") or doc.memory or []
-        relationship = data.get("relationship") or doc.relationship or ""
-        prompt_lines = [
-            f"你是{doc.display_name}。{relationship}".rstrip("。") + "。",
-            "",
-            "# 表达硬规则（必须遵守）",
-            *[f"- {r}" for r in rules],
-            "",
-            "# 高频口头禅/语气词",
-            *[f"- {w}" for w in phrases],
-            "",
-            "# 场景例句（摘自聊天记录）",
-        ]
-        for scene, lines in repls.items():
-            prompt_lines.append(f"## {scene}")
-            for line in (lines if isinstance(lines, list) else [lines]):
-                prompt_lines.append(f"- {line}")
-        if memories:
-            prompt_lines.append("")
-            prompt_lines.append("# 共同回忆")
-            for m in memories:
-                if isinstance(m, dict):
-                    prompt_lines.append(f"- {m.get('body', str(m))}")
-        doc.system_prompt = "\n".join(prompt_lines)
-        return doc
     except Exception:
         return None
+    # 用 LLM 结构化字段渲染成完整 system_prompt（dot-skill 多层结构）
+    doc.system_prompt = build_system_prompt(doc, data)
+    return doc
 
 
 def distill(messages: list[Message], name: str, config: dict) -> PersonaDoc:

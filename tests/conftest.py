@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-# 兜底：即使包未做 editable install，也能让测试导入 alchemy_hive（配合 src 布局则需 src 入 path）。
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 兜底：即使包未做 editable install，也能让测试导入 alchemy_hive（src 布局需把 src/ 入 path）。
+_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(_ROOT / "src"))
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
 

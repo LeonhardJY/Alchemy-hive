@@ -7,7 +7,7 @@ from alchemy_hive.core.models import PersonaDoc
 
 
 def test_safe_filename_keeps_chinese():
-    assert safe_filename("张書源") == "张書源"
+    assert safe_filename("小明") == "小明"
 
 
 def test_safe_filename_blocks_path_traversal():
@@ -98,7 +98,7 @@ def test_export_and_snapshot_use_safe_name(tmp_path):
     safe = safe_filename("../evil")
     persona = tmp_path / "persona"
     persona.mkdir()
-    doc = PersonaDoc(name="../evil", display_name="张書源", system_prompt="你是张書源。")
+    doc = PersonaDoc(name="../evil", display_name="小明", system_prompt="你是小明。")
     (persona / f"{safe}.json").write_text(doc.model_dump_json(indent=2), encoding="utf-8")
     export_buzz("../evil", str(tmp_path))
     p = tmp_path / "export" / f"{safe}.agent.json"
@@ -116,10 +116,10 @@ def test_full_pipeline_path_traversal_safe(tmp_path, monkeypatch):
 
     def fake_post(*a, **k):
         payload = {
-            "display_name": "张書源",
+            "display_name": "小明",
             "relationship": "好朋友",
             "expression_rules": ["一次只说一句话"],
-            "system_prompt": "你是张書源。",
+            "system_prompt": "你是小明。",
         }
         return type(
             "R",
@@ -130,7 +130,7 @@ def test_full_pipeline_path_traversal_safe(tmp_path, monkeypatch):
             },
         )()
 
-    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     runner = CliRunner()
     out = str(tmp_path)
     cfg = tmp_path / "cfg.toml"

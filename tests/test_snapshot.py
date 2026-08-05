@@ -9,9 +9,9 @@ from alchemy_hive.buzz.snapshot import build_snapshot, validate_snapshot, write_
 
 def _doc() -> PersonaDoc:
     return PersonaDoc(
-        name="张書源",
-        display_name="张書源",
-        system_prompt="你是张書源。\n一次只说一句话。",
+        name="小明",
+        display_name="小明",
+        system_prompt="你是小明。\n一次只说一句话。",
     )
 
 
@@ -19,9 +19,9 @@ def test_snapshot_matches_v1_schema():
     snap = build_snapshot(_doc())
     assert snap["format"] == "buzz-agent-snapshot"
     assert snap["version"] == 1
-    assert snap["definition"]["name"] == "张書源"
-    assert snap["profile"]["displayName"] == "张書源"
-    assert "张書源" in snap["definition"]["systemPrompt"]
+    assert snap["definition"]["name"] == "小明"
+    assert snap["profile"]["displayName"] == "小明"
+    assert "小明" in snap["definition"]["systemPrompt"]
     assert snap["memory"]["level"] == "none"
     validate_snapshot(snap)
 
@@ -36,10 +36,18 @@ def test_snapshot_rejects_empty_name():
 def test_snapshot_with_memory_uses_everything():
     doc = _doc()
     doc.memory = [{"slug": "core", "body": "2022 疫情网课一起用 AI 写小说"}]
-    snap = build_snapshot(doc)
+    snap = build_snapshot(doc, include_memory=True)
     assert snap["memory"]["level"] == "everything"
     assert snap["memory"]["entries"][0]["slug"] == "core"
     validate_snapshot(snap)
+
+
+def test_snapshot_memory_excluded_by_default():
+    doc = _doc()
+    doc.memory = [{"slug": "core", "body": "2022 疫情网课一起用 AI 写小说"}]
+    snap = build_snapshot(doc)  # 默认不导出明文记忆
+    assert snap["memory"]["level"] == "none"
+    assert snap["memory"]["entries"] == []
 
 
 def test_snapshot_no_memory_stays_none():
@@ -81,10 +89,10 @@ def test_snapshot_rejects_slug_prefix_abuse():
 
 def test_write_snapshot_filename_uses_user_name(tmp_path):
     # display_name 与 name 不同：文件名必须以用户输入的 name 为准
-    doc = PersonaDoc(name="张書源", display_name="模型的别称", system_prompt="你是张書源。")
+    doc = PersonaDoc(name="小明", display_name="模型的别称", system_prompt="你是小明。")
     path = write_snapshot_json(doc, str(tmp_path))
     written = Path(path)
-    assert written.name == "张書源.agent.json", f"文件名应为用户 name，实际 {written.name}"
+    assert written.name == "小明.agent.json", f"文件名应为用户 name，实际 {written.name}"
     assert "模型的别称.agent.json" not in [p.name for p in tmp_path.iterdir()]
     snap = validate_snapshot(build_snapshot(doc))
     assert snap is None  # 校验通过
@@ -92,7 +100,7 @@ def test_write_snapshot_filename_uses_user_name(tmp_path):
 
 def test_write_snapshot_filename_sanitizes_illegal_chars(tmp_path):
     # 含非法字符的 name：安全清洗，绝不产生子目录/越界路径
-    doc = PersonaDoc(name="a/b", display_name="张書源", system_prompt="你是张書源。")
+    doc = PersonaDoc(name="a/b", display_name="小明", system_prompt="你是小明。")
     path = write_snapshot_json(doc, str(tmp_path))
     written = Path(path)
     assert written.parent == tmp_path, f"不应产生子目录，实际 {written.parent}"
@@ -134,7 +142,7 @@ def test_snapshot_rejects_missing_definition():
 
 def test_snapshot_rejects_non_dict_definition():
     snap = build_snapshot(_doc())
-    snap["definition"] = "张書源"
+    snap["definition"] = "小明"
     with pytest.raises(ValueError, match="definition 必须是对象"):
         validate_snapshot(snap)
 
@@ -148,7 +156,7 @@ def test_snapshot_rejects_missing_profile():
 
 def test_snapshot_rejects_non_dict_profile():
     snap = build_snapshot(_doc())
-    snap["profile"] = ["张書源"]
+    snap["profile"] = ["小明"]
     with pytest.raises(ValueError, match="profile 必须是对象"):
         validate_snapshot(snap)
 

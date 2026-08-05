@@ -10,7 +10,7 @@ from ..core.models import PersonaDoc
 from ..core.safe import safe_filename
 
 
-def export_buzz(name: str, workdir: str) -> None:
+def export_buzz(name: str, workdir: str, with_memory: bool = False) -> None:
     safe = safe_filename(name)
     json_path = Path(workdir) / "persona" / f"{safe}.json"
     md_path = Path(workdir) / "persona" / f"{safe}.md"
@@ -28,14 +28,19 @@ def export_buzz(name: str, workdir: str) -> None:
         doc = PersonaDoc(name=name, display_name=name, system_prompt=md_path.read_text(encoding="utf-8"))
     else:
         raise typer.BadParameter(f"未找到 persona {md_path}，请先运行 distill")
+    if doc.memory and not with_memory:
+        typer.echo(
+            f"[提醒] 已省略 {len(doc.memory)} 条共同记忆（记忆为明文、含真实内容，默认不含；"
+            "如需导出请加 --with-memory）"
+        )
     export_dir = Path(workdir) / "export"
     export_dir.mkdir(parents=True, exist_ok=True)
-    path = write_snapshot_json(doc, str(export_dir))
+    path = write_snapshot_json(doc, str(export_dir), include_memory=with_memory)
     typer.echo(f"[export] 已生成 -> {path}")
     typer.echo("[提醒] 产物含真实聊天内容，分享到 GitHub/他人前请自行脱敏。")
 
 
-def export_pack(names: list[str], workdir: str, channel: str = "#friends") -> str:
+def export_pack(names: list[str], workdir: str, channel: str = "#friends", with_memory: bool = False) -> str:
     """批量导出多 agent 的 .agent.json + 社群清单 community.json，返回 community.json 路径。"""
     from ..core.community import build_community
     export_dir = Path(workdir) / "export"
@@ -55,7 +60,9 @@ def export_pack(names: list[str], workdir: str, channel: str = "#friends") -> st
         # 强制统一 name 为请求名：保证生成的 .agent.json 文件名与 community.json 清单路径一致
         # （persona 内部 name 可能是 LLM 蒸馏时误写的别名，不能让它决定文件名）
         doc.name = name
-        write_snapshot_json(doc, str(export_dir))
+        write_snapshot_json(doc, str(export_dir), include_memory=with_memory)
+    if with_memory:
+        typer.echo("[提醒] 已导出共同记忆（明文、含真实内容），分享前请自行脱敏。")
     comm = build_community(names, str(export_dir), channel)
     comm_path = export_dir / "community.json"
     comm_path.write_text(json.dumps(comm, ensure_ascii=False, indent=2), encoding="utf-8")

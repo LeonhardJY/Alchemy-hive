@@ -9,18 +9,18 @@ def test_distill_no_api_key_raises(examples_dir):
     """无 api_key 时必须抛 DistillError，绝不走规则兜底。"""
     msgs = parse_messages(str(examples_dir / "chat.txt"))
     with pytest.raises(DistillError):  # 空配置 → 无 api_key
-        distill(msgs, "张書源", {})
+        distill(msgs, "小明", {})
 
 
 def test_distill_missing_base_url_raises(examples_dir):
     """缺 base_url：API key 校验通过后 base_url 为 None，_llm_distill 兜底失败 → DistillError。"""
     msgs = parse_messages(str(examples_dir / "chat.txt"))
     with pytest.raises(DistillError):
-        distill(msgs, "张書源", {"model": {"api_key": "k", "model": "m"}})
+        distill(msgs, "小明", {"model": {"api_key": "k", "model": "m"}})
 
 
 def test_distill_missing_model_name_raises(examples_dir, monkeypatch):
-    """缺 model 名：请求 json 的 model 为 None（不送真端点）→ 抛 DistillError。"""
+    """缺 model 名：客户端提前校验，不发起任何请求（无需联网）→ 直接 DistillError。"""
     msgs = parse_messages(str(examples_dir / "chat.txt"))
     captured: dict = {}
 
@@ -28,11 +28,10 @@ def test_distill_missing_model_name_raises(examples_dir, monkeypatch):
         captured.update(k)
         raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        distill(msgs, "张書源", {"model": {"base_url": "http://x", "api_key": "k"}})
-    # 缺 model 时请求绝不应携带非空 model 名
-    assert captured["json"]["model"] is None
+        distill(msgs, "小明", {"model": {"base_url": "http://x", "api_key": "k"}})
+    assert captured == {}, "缺 model 时不应携带错误 model 名发起网络请求"
 
 
 def test_distill_llm_failure_raises(examples_dir, monkeypatch):
@@ -43,9 +42,9 @@ def test_distill_llm_failure_raises(examples_dir, monkeypatch):
     def fake_post(*a, **k):
         raise httpx.ConnectError("network down")
 
-    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        distill(msgs, "张書源", config)
+        distill(msgs, "小明", config)
 
 
 def test_distill_http_status_error_raises(examples_dir, monkeypatch):
@@ -69,9 +68,9 @@ def test_distill_http_status_error_raises(examples_dir, monkeypatch):
     def fake_post(*a, **k):
         return BadResponse()
 
-    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        distill(msgs, "张書源", config)
+        distill(msgs, "小明", config)
 
 
 def test_distill_llm_success_path(examples_dir, monkeypatch):
@@ -119,7 +118,7 @@ def test_distill_llm_success_path(examples_dir, monkeypatch):
             "model": "gpt-4",
         }
     }
-    doc = distill(msgs, "张書源", config)
+    doc = distill(msgs, "小明", config)
 
     # 请求锁死：url 指向 base_url 的 /chat/completions，带 api_key，model 与配置一致
     url = captured["url"]
@@ -141,3 +140,40 @@ def test_distill_llm_success_path(examples_dir, monkeypatch):
     assert "# 表达硬规则" in doc.system_prompt
     assert "# 场景例句" in doc.system_prompt
     assert "约饭" in doc.system_prompt
+
+
+def test_distill_renders_dot_skill_layers(examples_dir, monkeypatch):
+    """dot-skill 风格：关系上下文/节奏/情绪逻辑/记忆余像 应进入 system_prompt。"""
+    import json as _json
+    msgs = parse_messages(str(examples_dir / "chat.txt"))
+    fake = {
+        "display_name": "小明",
+        "relationship": "好朋友",
+        "relationship_context": "高中同桌，毕业后还常联系。",
+        "expression_rules": ["一次只说一句话"],
+        "signature_phrases": ["蛤"],
+        "rhythm": "短句碎片连发。",
+        "example_replies": {"约饭": ["走"]},
+        "layers": {
+            "closeness": "话匣子打开",
+            "withdrawal": "只回……",
+            "conflict": "玩笑带过",
+            "repair": "甩个视频",
+            "boundaries": "讨厌说教",
+        },
+        "memory": [{"slug": "core", "body": "食堂一起研究菜单"}],
+        "memory_signature": "念旧但不说。",
+    }
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self): return {"choices": [{"message": {"content": _json.dumps(fake, ensure_ascii=False)}}]}
+
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", lambda *a, **k: FakeResp())
+    doc = distill(msgs, "小明", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+    assert "高中同桌，毕业后还常联系。" in doc.system_prompt
+    assert "# 说话节奏" in doc.system_prompt and "短句碎片连发。" in doc.system_prompt
+    assert "# 情绪逻辑" in doc.system_prompt
+    assert "亲近时：话匣子打开" in doc.system_prompt
+    assert "边界：讨厌说教" in doc.system_prompt
+    assert "# 记忆余像" in doc.system_prompt and "念旧但不说。" in doc.system_prompt

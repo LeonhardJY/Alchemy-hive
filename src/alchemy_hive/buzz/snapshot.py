@@ -1,4 +1,8 @@
-"""buzz agent 快照（buzz-agent-snapshot v1）生成与校验。"""
+"""buzz agent 快照（buzz-agent-snapshot v1）生成与校验。
+
+快照格式与 github.com/block/buzz（Apache-2.0）桌面端的 .agent.json 互操作，
+字段结构对齐 buzz 的 agent_snapshot v1 manifest；本文件为独立实现。
+"""
 import json
 import re
 from pathlib import Path
@@ -14,9 +18,12 @@ _SLUG_RE = re.compile(r"^(core$|mem/.+)$")
 _PATH_SEP_RE = re.compile(r"[/\\\\]")
 
 
-def build_snapshot(doc: PersonaDoc) -> dict:
-    """PersonaDoc → buzz v1 快照 dict（camelCase）。"""
-    memory_entries = list(doc.memory) if doc.memory else []
+def build_snapshot(doc: PersonaDoc, *, include_memory: bool = False) -> dict:
+    """PersonaDoc → buzz v1 快照 dict（camelCase）。
+
+    记忆是明文、含真实聊天内容，默认不导出（include_memory=False），需显式 opt-in。
+    """
+    memory_entries = list(doc.memory) if (include_memory and doc.memory) else []
     memory_level = "everything" if memory_entries else "none"
     return {
         "format": _FORMAT,
@@ -95,10 +102,10 @@ def validate_snapshot(snapshot: dict) -> None:
             raise ValueError("memory.entries[].body 必须是非空字符串")
 
 
-def write_snapshot_json(doc: PersonaDoc, out_path: str) -> str:
+def write_snapshot_json(doc: PersonaDoc, out_path: str, *, include_memory: bool = False) -> str:
     """写 .agent.json 并返回文件路径。文件名基于用户输入的 doc.name（经安全清洗），
-    display_name 只进 profile 显示、不影响文件名。"""
-    snap = build_snapshot(doc)
+    display_name 只进 profile 显示、不影响文件名。记忆默认不含。"""
+    snap = build_snapshot(doc, include_memory=include_memory)
     validate_snapshot(snap)
     safe = safe_filename(doc.name)
     p = Path(out_path) / f"{safe}.agent.json"

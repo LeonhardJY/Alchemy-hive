@@ -5,5 +5,5 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
-.weflow-agent/
+.alchemy-hive/
 .superpowers/

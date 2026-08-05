@@ -1,11 +1,7 @@
 """盲测对拍：从真实聊天抽样片段，让 agent 接话，人工评分验证蒸馏质量。"""
-import json
-import re
-
-import httpx
-
 from .models import Message
-from .distill import load_config, DistillError
+from .distill import DistillError
+from .llm import chat_completion, LLMError
 
 _SELF_ALIASES = ("我", "self", "me")
 
@@ -30,37 +26,16 @@ def _fmt_context(context: list[Message]) -> str:
 
 def ask_agent(context_msgs: list[Message], name: str, system_prompt: str, config: dict) -> str:
     """用蒸馏出的 persona + 模型，让 agent 以 {name} 的口吻接话。"""
-    model = config.get("model") or {}
-    missing = [k for k in ("base_url", "api_key", "model") if not model.get(k)]
-    if missing:
-        labels = "、".join({"base_url": "base_url", "api_key": "API key", "model": "model"}[k] for k in missing)
-        raise DistillError(f"未配置模型 {labels}，请先配置 [model] 段相应字段。")
     prompt = (
         f"{system_prompt}\n\n"
         f"下面是和你的对话上下文，请以 {name} 的口吻回复下一句，只说一句：\n\n"
         f"{_fmt_context(context_msgs)}\n"
     )
     try:
-        resp = httpx.post(
-            f"{model['base_url'].rstrip('/')}/chat/completions",
-            headers={"Authorization": f"Bearer {model['api_key']}"},
-            json={"model": model["model"], "messages": [{"role": "user", "content": prompt}], "temperature": 0.7},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        content = resp.json()["choices"][0]["message"]["content"]
-        # DeepSeek 等推理模型部分响应 content 为 null → 返回空串；非字符串（数字等）→ str() 归一化。
-        # 直接 .strip() 会抛 AttributeError（此前未被 except 捕获 → CLI 裸 traceback）。
-        if not isinstance(content, str):
-            content = "" if content is None else str(content)
-        return content.strip()
-    except httpx.HTTPError as e:
-        # ConnectError / TimeoutException / HTTPStatusError 等网络与 HTTP 异常
-        raise DistillError("LLM 调用失败，请检查配置和网络") from e
-    except (ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
-        # 响应 JSON 解析失败或结构不符：JSONDecodeError 是 ValueError 子类；
-        # 空 choices（[...][0] → IndexError）、字段类型错误（TypeError）也统一转 DistillError
-        raise DistillError("LLM 调用失败，请检查配置和网络") from e
+        return chat_completion(config, [{"role": "user", "content": prompt}], temperature=0.7)
+    except LLMError as e:
+        # 保留具体消息（如"未配置模型 API key..."），但统一转 DistillError 供调用方捕获
+        raise DistillError(str(e)) from e
 
 
 def rate_pairs(pairs: list[dict], agent_replies: list[str], ratings: dict[int, int]) -> dict:
