@@ -4,6 +4,7 @@ import typer
 from .import_cmd import import_chat
 from .distill_cmd import distill_persona
 from .export_cmd import export_buzz
+from .blindtest_cmd import run_blindtest
 from ..core.distill import load_config
 
 app = typer.Typer(
@@ -41,6 +42,16 @@ def export_cmd(
 ):
     """导出 buzz .agent.json 快照。"""
     export_buzz(name, workdir)
+
+@app.command("blindtest")
+def blindtest_cmd(
+    name: str = typer.Option(..., "--name", help="人物名"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件"),
+    n: int = typer.Option(5, "--n", help="抽样片段数"),
+):
+    """盲测对拍：真实回复 vs agent 接话，人工评分。"""
+    run_blindtest(name, workdir, load_config(config_path), n)
 
 @app.command("gui")
 def gui_cmd():

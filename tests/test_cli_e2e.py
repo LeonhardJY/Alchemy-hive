@@ -97,3 +97,19 @@ def test_e2e_export_schema_mismatch_reports_clear_error(tmp_path):
     assert r.exit_code != 0, r.output
     assert "损坏" in r.output
     assert "Traceback" not in r.output
+
+
+def test_blindtest_command(monkeypatch, tmp_path):
+    # mock 模型接话 + 人工打分输入，走真实 CLI 命令
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": lambda self: None,
+                              "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
+    out = str(tmp_path)
+    cfg = _write_fake_cfg(tmp_path)  # blindtest 需真实 [model] 配置，否则无 key 抛 DistillError
+    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", cfg, "--n", "1"])
+    assert r.exit_code == 0, r.output
+    assert "平均分" in r.output
