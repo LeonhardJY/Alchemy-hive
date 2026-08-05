@@ -67,6 +67,15 @@ model = "deepseek-chat"
 | `weflow-agent import <文件> --name X` | 解析聊天 → 结构化消息 |
 | `weflow-agent distill --name X` | 蒸馏 persona（LLM） |
 | `weflow-agent export --name X` | 导出 `.agent.json` |
+| `weflow-agent blindtest --name X` | 盲测验证（真实 vs agent 接话，人工打分） |
+
+## 盲测验证（像不像）
+
+`weflow-agent blindtest --name 张書源` 会从聊天记录抽真实片段，让蒸馏出的 agent 接话，你逐条打分（1-5），最后给出平均分——验证蒸馏质量，不满意就重新 distill 或调模型。
+
+```bash
+weflow-agent blindtest --name 张書源 --n 5
+```
 
 ## 隐私
 
