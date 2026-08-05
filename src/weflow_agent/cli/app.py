@@ -4,6 +4,7 @@ import typer
 from .import_cmd import import_chat
 from .distill_cmd import distill_persona
 from .export_cmd import export_buzz
+from ..core.distill import load_config
 
 app = typer.Typer(
     help="weflow-agent: 从微信聊天记录蒸馏人物 AI agent，导出 buzz 快照。",
@@ -31,7 +32,7 @@ def distill_cmd(
     config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件"),
 ):
     """蒸馏 PersonaDoc + persona skill。"""
-    distill_persona(name, workdir, config_path)
+    distill_persona(name, workdir, load_config(config_path))
 
 @app.command("export")
 def export_cmd(
