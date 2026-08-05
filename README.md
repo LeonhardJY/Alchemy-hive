@@ -68,6 +68,7 @@ model = "deepseek-chat"
 | `weflow-agent distill --name X` | 蒸馏 persona（LLM） |
 | `weflow-agent export --name X` | 导出 `.agent.json` |
 | `weflow-agent blindtest --name X` | 盲测验证（真实 vs agent 接话，人工打分） |
+| `weflow-agent pack --names A,B` | 批量导出多 agent + 社群清单 |
 
 ## 盲测验证（像不像）
 
@@ -76,6 +77,17 @@ model = "deepseek-chat"
 ```bash
 weflow-agent blindtest --name 张書源 --n 5
 ```
+
+## 社群（多 agent）
+
+把多个蒸馏出的人物批量导出，导入 buzz 后建群形成社群：
+
+```bash
+weflow-agent pack --names 张書源,张鹏博
+# 产出 build/export/张書源.agent.json、build/export/张鹏博.agent.json + community.json（群组清单）
+```
+
+按 `community.json` 的 setup 步骤：逐个把 `.agent.json` 拖入 buzz 导入 → 新建频道（默认 #friends）把 agent 加入 → 在群里 @agent 触发对话。subscribe/triggers 是建议，导入后可在 buzz UI 微调。
 
 ## 隐私
 
