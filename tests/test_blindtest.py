@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from weflow_agent.core.parser import parse_messages
@@ -5,13 +6,41 @@ from weflow_agent.core.distill import DistillError
 from weflow_agent.core.blindtest import extract_pairs, rate_pairs, ask_agent
 
 
-def test_extract_pairs_takes_them_reply():
-    msgs = parse_messages("examples/chat.txt")
+_CONFIG = {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}}
+
+_DEFAULT_CONTENT = object()  # 哨兵：区分"未传"与"显式传 None（content: null）"
+
+
+def _ok_resp(content=_DEFAULT_CONTENT):
+    """构造返回给定 content 的假响应（默认一段接话；content=None 模拟 DeepSeek content: null）。"""
+    if content is _DEFAULT_CONTENT:
+        content = "走，吃饭"
+    return type(
+        "R",
+        (),
+        {
+            "raise_for_status": lambda self: None,
+            "json": lambda self: {"choices": [{"message": {"content": content}}]},
+        },
+    )()
+
+
+def test_extract_pairs_takes_them_reply(examples_dir):
+    msgs = parse_messages(str(examples_dir / "chat.txt"))
     pairs = extract_pairs(msgs, n=2, context_len=2)
     assert len(pairs) == 1
     # real_reply 必须是对方的发言
     assert all(p["real_reply"].sender != "我" for p in pairs)
     assert all(len(p["context"]) <= 2 for p in pairs)
+
+
+def test_extract_pairs_zero_n_returns_empty(examples_dir):
+    msgs = parse_messages(str(examples_dir / "chat.txt"))
+    assert extract_pairs(msgs, n=0) == []
+
+
+def test_extract_pairs_empty_messages_returns_empty():
+    assert extract_pairs([], n=5) == []
 
 
 def test_rate_pairs_summary():
@@ -23,14 +52,40 @@ def test_rate_pairs_summary():
 
 
 def test_ask_agent_uses_model(monkeypatch):
-    # mock httpx.post 返回模型接话
-    import json as _json
+    # mock httpx.post 返回模型接话，并锁死请求发往所配端点
+    captured: dict = {}
+
     def fake_post(*a, **k):
-        return type("R", (), {"raise_for_status": lambda self: None,
-                              "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
+        captured.update(k)
+        captured["url"] = a[0]
+        return _ok_resp()
+
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
-    reply = ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+    reply = ask_agent([], "张書源", "你是张書源。", _CONFIG)
     assert reply == "走，吃饭"
+    url = captured["url"]
+    assert url.startswith(_CONFIG["model"]["base_url"]), url
+    assert "/chat/completions" in url, url
+    assert _CONFIG["model"]["api_key"] in captured["headers"]["Authorization"]
+    assert captured["json"]["model"] == _CONFIG["model"]["model"]
+
+
+def test_ask_agent_null_content_returns_empty(monkeypatch):
+    # DeepSeek 推理模型部分响应 content: null → 返回空串，绝不裸 AttributeError
+    def fake_post(*a, **k):
+        return _ok_resp(content=None)
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    assert ask_agent([], "张書源", "你是张書源。", _CONFIG) == ""
+
+
+def test_ask_agent_non_str_content_coerced(monkeypatch):
+    # content 为数字等非字符串 → str() 归一化返回，不裸 AttributeError
+    def fake_post(*a, **k):
+        return _ok_resp(content=42)
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    assert ask_agent([], "张書源", "你是张書源。", _CONFIG) == "42"
 
 
 def test_ask_agent_missing_config_raises_distill_error():
@@ -45,14 +100,29 @@ def test_ask_agent_missing_config_raises_distill_error():
 
 def test_ask_agent_network_error_raises_distill_error(monkeypatch):
     # httpx.post 抛 ConnectError（httpx.HTTPError 子类）→ 转 DistillError
-    import httpx
-
     def raise_connect(*a, **k):
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", raise_connect)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+        ask_agent([], "张書源", "你是张書源。", _CONFIG)
+
+
+def test_ask_agent_http_status_error_raises_distill_error(monkeypatch):
+    # HTTP 500：raise_for_status 抛 HTTPStatusError → 转 DistillError
+    def raise_status(*a, **k):
+        raise httpx.HTTPStatusError(
+            "500 Internal Server Error",
+            request=httpx.Request("POST", "http://x/chat/completions"),
+            response=None,
+        )
+
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": raise_status})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
 
 def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
@@ -67,7 +137,7 @@ def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
 
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+        ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
 
 def test_ask_agent_empty_choices_raises_distill_error(monkeypatch):
@@ -78,7 +148,7 @@ def test_ask_agent_empty_choices_raises_distill_error(monkeypatch):
 
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+        ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
 
 def test_ask_agent_list_response_raises_distill_error(monkeypatch):
@@ -88,4 +158,4 @@ def test_ask_agent_list_response_raises_distill_error(monkeypatch):
 
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
-        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+        ask_agent([], "张書源", "你是张書源。", _CONFIG)

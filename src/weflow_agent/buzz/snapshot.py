@@ -90,8 +90,9 @@ def validate_snapshot(snapshot: dict) -> None:
         slug = str(e.get("slug") or "")
         if not _SLUG_RE.match(slug):
             raise ValueError(f"memory.entries[].slug 必须是 core 或 mem/ 前缀，收到: {slug!r}")
-        if not str(e.get("body") or "").strip():
-            raise ValueError("memory.entries[].body 不能为空")
+        body = e.get("body")
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError("memory.entries[].body 必须是非空字符串")
 
 
 def write_snapshot_json(doc: PersonaDoc, out_path: str) -> str:

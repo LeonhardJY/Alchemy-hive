@@ -48,7 +48,12 @@ def ask_agent(context_msgs: list[Message], name: str, system_prompt: str, config
             timeout=60,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        content = resp.json()["choices"][0]["message"]["content"]
+        # DeepSeek 等推理模型部分响应 content 为 null → 返回空串；非字符串（数字等）→ str() 归一化。
+        # 直接 .strip() 会抛 AttributeError（此前未被 except 捕获 → CLI 裸 traceback）。
+        if not isinstance(content, str):
+            content = "" if content is None else str(content)
+        return content.strip()
     except httpx.HTTPError as e:
         # ConnectError / TimeoutException / HTTPStatusError 等网络与 HTTP 异常
         raise DistillError("LLM 调用失败，请检查配置和网络") from e

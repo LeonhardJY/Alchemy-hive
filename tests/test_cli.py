@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
@@ -28,8 +29,5 @@ def test_distill_persona_rejects_non_dict_non_str_config(tmp_path):
     (parsed / "张書源.json").write_text(
         json.dumps([msg], ensure_ascii=False), encoding="utf-8"
     )
-    try:
+    with pytest.raises(typer.BadParameter, match="配置必须是 dict 或配置文件路径"):
         distill_persona("张書源", str(tmp_path), Path("somewhere/config.toml"))
-        assert False, "非 dict 非 str 的 config 应抛 typer.BadParameter"
-    except typer.BadParameter as e:
-        assert "配置必须是 dict 或配置文件路径" in str(e)

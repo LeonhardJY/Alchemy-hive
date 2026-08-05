@@ -5,17 +5,38 @@ from weflow_agent.cli.app import app
 
 runner = CliRunner()
 
+# 与 _write_fake_cfg 写出的配置一致：用于断言请求发往所配端点
+_MODEL_CFG = {"base_url": "http://x", "api_key": "k", "model": "m"}
+
+
 def _fake_llm(monkeypatch):
-    """mock weflow_agent.core.distill.httpx.post，返回假 OpenAI 响应，绕过真实网络。"""
+    """mock weflow_agent.core.distill.httpx.post，返回假 OpenAI 响应，绕过真实网络。
+
+    返回捕获到的请求 kwargs（url/headers/json），供测试断言样本发往所配端点。
+    """
     import json as _json
 
+    captured: dict = {}
+
     def fake_post(*a, **k):
+        captured.update(k)
+        captured["url"] = a[0]
         payload = {"display_name": "张書源", "relationship": "好朋友",
                    "expression_rules": ["一次只说一句话"], "system_prompt": "你是张書源。"}
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": _json.dumps(payload, ensure_ascii=False)}}]}})()
 
     monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    return captured
+
+
+def _assert_distill_request(captured):
+    """锁死"样本发往所配端点"：url 指向 base_url 的 /chat/completions、带 api_key、model 与配置一致。"""
+    url = captured["url"]
+    assert url.startswith(_MODEL_CFG["base_url"]), url
+    assert "/chat/completions" in url, url
+    assert _MODEL_CFG["api_key"] in captured["headers"]["Authorization"]
+    assert captured["json"]["model"] == _MODEL_CFG["model"]
 
 
 def _write_fake_cfg(tmp_path):
@@ -25,12 +46,12 @@ def _write_fake_cfg(tmp_path):
     return str(cfg)
 
 
-def test_e2e_full_pipeline(tmp_path, monkeypatch):
-    _fake_llm(monkeypatch)
+def test_e2e_full_pipeline(tmp_path, monkeypatch, examples_dir):
+    captured = _fake_llm(monkeypatch)
     out = str(tmp_path)
     cfg = _write_fake_cfg(tmp_path)
     # import
-    r1 = runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r1 = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
     assert r1.exit_code == 0, r1.output
     parsed = json.loads((tmp_path / "张書源.json").read_text(encoding="utf-8"))
     assert len(parsed) >= 2
@@ -38,6 +59,7 @@ def test_e2e_full_pipeline(tmp_path, monkeypatch):
     r2 = runner.invoke(app, ["distill", "--name", "张書源", "--workdir", out, "--config", cfg])
     assert r2.exit_code == 0, r2.output
     assert (tmp_path / "persona" / "张書源.md").exists()
+    _assert_distill_request(captured)
     # export
     r3 = runner.invoke(app, ["export", "--name", "张書源", "--workdir", out])
     assert r3.exit_code == 0, r3.output
@@ -46,25 +68,29 @@ def test_e2e_full_pipeline(tmp_path, monkeypatch):
     assert "脱敏" in r3.output
 
 
-def test_distill_persists_persona_json_with_memory(tmp_path, monkeypatch):
-    _fake_llm(monkeypatch)
+def test_distill_persists_persona_json_with_memory(tmp_path, monkeypatch, examples_dir):
+    captured = _fake_llm(monkeypatch)
     out = str(tmp_path)
     cfg = _write_fake_cfg(tmp_path)
-    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
+    assert r_imp.exit_code == 0, r_imp.output
     r = runner.invoke(app, ["distill", "--name", "张書源", "--workdir", out, "--config", cfg])
     assert r.exit_code == 0, r.output
+    _assert_distill_request(captured)
     json_path = tmp_path / "persona" / "张書源.json"
     assert json_path.exists(), "distill 应持久化完整 PersonaDoc JSON"
     doc = json.loads(json_path.read_text(encoding="utf-8"))
     assert "system_prompt" in doc and "memory" in doc  # 完整字段
 
 
-def test_e2e_export_includes_memory_when_present(tmp_path, monkeypatch):
+def test_e2e_export_includes_memory_when_present(tmp_path, monkeypatch, examples_dir):
     _fake_llm(monkeypatch)
     out = str(tmp_path)
     cfg = _write_fake_cfg(tmp_path)
-    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
-    runner.invoke(app, ["distill", "--name", "张書源", "--workdir", out, "--config", cfg])
+    r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
+    assert r_imp.exit_code == 0, r_imp.output
+    r_dis = runner.invoke(app, ["distill", "--name", "张書源", "--workdir", out, "--config", cfg])
+    assert r_dis.exit_code == 0, r_dis.output
     # 手动注入一条记忆，模拟 LLM 蒸馏产出的记忆（mock LLM 未返回记忆）
     p = tmp_path / "persona" / "张書源.json"
     doc = json.loads(p.read_text(encoding="utf-8"))
@@ -99,9 +125,13 @@ def test_e2e_export_schema_mismatch_reports_clear_error(tmp_path):
     assert "Traceback" not in r.output
 
 
-def test_blindtest_command(monkeypatch, tmp_path):
+def test_blindtest_command(monkeypatch, tmp_path, examples_dir):
     # mock 模型接话 + 人工打分输入，走真实 CLI 命令
+    captured: dict = {}
+
     def fake_post(*a, **k):
+        captured.update(k)
+        captured["url"] = a[0]
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
 
@@ -109,17 +139,42 @@ def test_blindtest_command(monkeypatch, tmp_path):
     monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
     out = str(tmp_path)
     cfg = _write_fake_cfg(tmp_path)  # blindtest 需真实 [model] 配置，否则无 key 抛 DistillError
-    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
+    assert r_imp.exit_code == 0, r_imp.output
     r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", cfg, "--n", "1"])
     assert r.exit_code == 0, r.output
     assert "平均分" in r.output
+    # 锁死盲测请求发往所配端点
+    assert captured["url"] == _MODEL_CFG["base_url"] + "/chat/completions"
+    assert _MODEL_CFG["api_key"] in captured["headers"]["Authorization"]
+    assert captured["json"]["model"] == _MODEL_CFG["model"]
 
 
-def test_blindtest_no_key_reports_clean_error(tmp_path):
+def test_blindtest_null_content_does_not_traceback(monkeypatch, tmp_path, examples_dir):
+    # 回归 Task A：DeepSeek 等推理模型响应 content: null 时，ask_agent 返回空串，
+    # CLI 不裸 traceback、正常跑完打分
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": lambda self: None,
+                              "json": lambda self: {"choices": [{"message": {"content": None}}]}})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
+    out = str(tmp_path)
+    cfg = _write_fake_cfg(tmp_path)
+    r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
+    assert r_imp.exit_code == 0, r_imp.output
+    r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", cfg, "--n", "1"])
+    assert r.exit_code == 0, r.output
+    assert "agent 接话:" in r.output
+    assert "Traceback" not in r.output
+
+
+def test_blindtest_no_key_reports_clean_error(tmp_path, examples_dir):
     # 无 [model] key：load_config 返回空 dict → ask_agent 抛 DistillError
     # 全局处理应输出一句中文错误并退出 1，绝不渲染裸 traceback
     out = str(tmp_path)
-    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
+    assert r_imp.exit_code == 0, r_imp.output
     r = runner.invoke(app, ["blindtest", "--name", "张書源", "--workdir", out, "--config", "no-such.toml", "--n", "1"])
     assert r.exit_code != 0, r.output
     assert "Traceback" not in r.output
@@ -138,7 +193,11 @@ def test_e2e_import_missing_file_reports_clean_error(tmp_path):
 def test_blindtest_default_out_dir_and_workdir(tmp_path, monkeypatch):
     # import 用默认 out-dir（build/parsed），blindtest 用默认 workdir（build）：
     # 应能找到解析产物并跑到打分阶段（mock httpx + 人工打分输入）
+    captured: dict = {}
+
     def fake_post(*a, **k):
+        captured.update(k)
+        captured["url"] = a[0]
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
 
@@ -153,3 +212,7 @@ def test_blindtest_default_out_dir_and_workdir(tmp_path, monkeypatch):
     r2 = runner.invoke(app, ["blindtest", "--name", "张書源", "--config", cfg, "--n", "1"])
     assert r2.exit_code == 0, r2.output
     assert "平均分" in r2.output
+    # 锁死盲测请求发往所配端点
+    assert captured["url"] == _MODEL_CFG["base_url"] + "/chat/completions"
+    assert _MODEL_CFG["api_key"] in captured["headers"]["Authorization"]
+    assert captured["json"]["model"] == _MODEL_CFG["model"]

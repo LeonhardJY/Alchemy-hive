@@ -140,3 +140,47 @@ def test_parse_gbk_txt(tmp_path):
     assert msgs[0].content == "epic又要送了？"
     assert msgs[1].sender == "我"
     assert msgs[1].content == "我看看"
+
+
+def test_parse_file_not_found_raises(tmp_path):
+    """文件不存在 → FileNotFoundError（CLI 统一错误边界捕获），而非空列表。"""
+    with pytest.raises(FileNotFoundError, match="文件不存在"):
+        parse_messages(str(tmp_path / "nope.txt"))
+
+
+def test_parse_unknown_extension_raises(tmp_path):
+    """未知扩展名（.md）→ ValueError，而非静默按 txt 解析。"""
+    f = tmp_path / "chat.md"
+    f.write_text("hello", encoding="utf-8")
+    with pytest.raises(ValueError, match="不支持的文件类型"):
+        parse_messages(str(f))
+
+
+def test_parse_top_level_scalar_raises(tmp_path):
+    """顶层既非数组也非对象（如裸字符串/数字）→ ValueError。"""
+    for i, raw in enumerate(('"just a string"', "123", "true")):
+        f = tmp_path / f"scalar_{i}.json"
+        f.write_text(raw, encoding="utf-8")
+        with pytest.raises(ValueError, match="无法识别的 WeFlow JSON 结构"):
+            parse_messages(str(f))
+
+
+def test_parse_messages_not_list_raises(tmp_path):
+    """顶层 dict 的 messages/data 键存在但值非数组 → ValueError。"""
+    f = tmp_path / "msgs_not_list.json"
+    f.write_text(json.dumps({"messages": "oops"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="无法识别的 WeFlow JSON 结构"):
+        parse_messages(str(f))
+
+
+def test_parse_skips_non_dict_records(tmp_path):
+    """数组内含非 dict 元素（数字/字符串）→ 跳过而非抛错，保留可解析消息。"""
+    f = tmp_path / "mixed.json"
+    f.write_text(json.dumps([
+        {"msgContent": "hi", "senderUsername": "me", "createTime": "2023-01-01 00:00:00"},
+        "not-a-dict",
+        42,
+    ]), encoding="utf-8")
+    msgs = parse_messages(str(f))
+    assert len(msgs) == 1
+    assert msgs[0].content == "hi"
