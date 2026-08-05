@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from weflow_agent.core.models import PersonaDoc
 from weflow_agent.core.safe import safe_filename
 from weflow_agent.buzz.snapshot import build_snapshot, validate_snapshot, write_snapshot_json
@@ -131,3 +133,98 @@ def test_validate_rejects_path_separators_in_display_name():
             assert False, f"profile.displayName 含路径分隔符 {value!r} 应被拒绝"
         except ValueError:
             pass
+
+
+# --- malformed 输入：统一抛明确 ValueError，而非 KeyError/AttributeError/TypeError ---
+
+
+def test_snapshot_rejects_non_dict_root():
+    with pytest.raises(ValueError, match="快照必须是对象"):
+        validate_snapshot(["not", "a", "dict"])
+
+
+def test_snapshot_rejects_missing_definition():
+    snap = build_snapshot(_doc())
+    del snap["definition"]
+    with pytest.raises(ValueError, match="definition"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_non_dict_definition():
+    snap = build_snapshot(_doc())
+    snap["definition"] = "张書源"
+    with pytest.raises(ValueError, match="definition 必须是对象"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_missing_profile():
+    snap = build_snapshot(_doc())
+    del snap["profile"]
+    with pytest.raises(ValueError, match="profile"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_non_dict_profile():
+    snap = build_snapshot(_doc())
+    snap["profile"] = ["张書源"]
+    with pytest.raises(ValueError, match="profile 必须是对象"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_non_str_name():
+    snap = build_snapshot(_doc())
+    snap["definition"]["name"] = None
+    with pytest.raises(ValueError, match="definition.name 不能为空"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_missing_memory_defaults_none():
+    snap = build_snapshot(_doc())
+    del snap["memory"]
+    validate_snapshot(snap)  # 不应抛：memory 缺失默认 none
+    snap["memory"] = None
+    validate_snapshot(snap)  # 显式 null 同样默认 none
+
+
+def test_snapshot_rejects_non_dict_memory():
+    snap = build_snapshot(_doc())
+    snap["memory"] = ["none"]
+    with pytest.raises(ValueError, match="memory 必须是对象"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_non_list_entries():
+    snap = build_snapshot(_doc())
+    snap["memory"] = {"level": "everything", "entries": {"core": {"body": "x"}}}
+    with pytest.raises(ValueError, match="memory.entries 必须是数组"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_non_dict_entry():
+    snap = build_snapshot(_doc())
+    snap["memory"] = {"level": "everything", "entries": ["core"]}
+    with pytest.raises(ValueError, match="memory.entries\\[0\\] 必须是对象"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_missing_slug():
+    snap = build_snapshot(_doc())
+    snap["memory"] = {"level": "everything", "entries": [{"body": "x"}]}
+    with pytest.raises(ValueError, match="slug"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_missing_body():
+    snap = build_snapshot(_doc())
+    snap["memory"] = {"level": "everything", "entries": [{"slug": "core"}]}
+    with pytest.raises(ValueError, match="body"):
+        validate_snapshot(snap)
+
+
+def test_snapshot_rejects_non_string_slug():
+    # slug 为 None/数字：不应 TypeError，统一 ValueError
+    for slug in (None, 123):
+        snap = build_snapshot(_doc())
+        snap["memory"] = {"level": "everything", "entries": [{"slug": slug, "body": "x"}]}
+        with pytest.raises(ValueError, match="slug"):
+            validate_snapshot(snap)

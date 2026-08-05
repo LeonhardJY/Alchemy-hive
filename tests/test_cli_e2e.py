@@ -126,6 +126,15 @@ def test_blindtest_no_key_reports_clean_error(tmp_path):
     assert "未配置模型" in r.output and "API key" in r.output
 
 
+def test_e2e_import_missing_file_reports_clean_error(tmp_path):
+    # import 一个不存在的文件：FileNotFoundError 应被 CLI 统一错误边界捕获，
+    # 输出一句中文错误并退出非 0，绝不裸 traceback
+    r = runner.invoke(app, ["import", "no-such-file.json", "--name", "张書源", "--out-dir", str(tmp_path)])
+    assert r.exit_code != 0, r.output
+    assert "Traceback" not in r.output
+    assert "错误" in r.output and "文件不存在" in r.output
+
+
 def test_blindtest_default_out_dir_and_workdir(tmp_path, monkeypatch):
     # import 用默认 out-dir（build/parsed），blindtest 用默认 workdir（build）：
     # 应能找到解析产物并跑到打分阶段（mock httpx + 人工打分输入）

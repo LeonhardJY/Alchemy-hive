@@ -52,8 +52,9 @@ def ask_agent(context_msgs: list[Message], name: str, system_prompt: str, config
     except httpx.HTTPError as e:
         # ConnectError / TimeoutException / HTTPStatusError 等网络与 HTTP 异常
         raise DistillError("LLM 调用失败，请检查配置和网络") from e
-    except (ValueError, KeyError, json.JSONDecodeError) as e:
-        # 响应 JSON 解析失败或结构不符（JSONDecodeError 是 ValueError 子类，一并覆盖）
+    except (ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
+        # 响应 JSON 解析失败或结构不符：JSONDecodeError 是 ValueError 子类；
+        # 空 choices（[...][0] → IndexError）、字段类型错误（TypeError）也统一转 DistillError
         raise DistillError("LLM 调用失败，请检查配置和网络") from e
 
 

@@ -15,13 +15,15 @@ app = typer.Typer(
 
 
 def _run_command(fn, *args, **kwargs):
-    """执行命令主体：DistillError 渲染为一句中文错误并退出 1，避免裸 traceback。
+    """执行命令主体：业务/IO 异常（DistillError、FileNotFoundError、ValueError、OSError）统一渲染为
+    一句中文错误并退出 1，避免裸 traceback。
 
-    typer 0.24 无 exception_handler 全局钩子，故由可能抛 DistillError 的命令统一走此入口。
+    typer 0.24 无 exception_handler 全局钩子，故由可能抛异常的 import/distill/export/blindtest 命令统一走此入口。
+    typer.BadParameter 不在捕获范围，仍由 typer 自行渲染。
     """
     try:
         fn(*args, **kwargs)
-    except DistillError as e:
+    except (FileNotFoundError, ValueError, OSError, DistillError) as e:
         typer.echo(f"错误: {e}", err=True)
         raise typer.Exit(1) from e
 
@@ -37,7 +39,7 @@ def import_cmd(
     out_dir: str = typer.Option("build/parsed", "--out-dir", help="解析产物目录"),
 ):
     """解析聊天记录 → 结构化消息。"""
-    import_chat(input_path, name, out_dir)
+    _run_command(import_chat, input_path, name, out_dir)
 
 @app.command("distill")
 def distill_cmd(
@@ -54,7 +56,7 @@ def export_cmd(
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
 ):
     """导出 buzz .agent.json 快照。"""
-    export_buzz(name, workdir)
+    _run_command(export_buzz, name, workdir)
 
 @app.command("blindtest")
 def blindtest_cmd(

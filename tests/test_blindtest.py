@@ -68,3 +68,24 @@ def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
     monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
         ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+
+
+def test_ask_agent_empty_choices_raises_distill_error(monkeypatch):
+    # 响应 {"choices": []} → resp.json()["choices"][0] 抛 IndexError → 转 DistillError
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": lambda self: None,
+                              "json": lambda self: {"choices": []}})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})
+
+
+def test_ask_agent_list_response_raises_distill_error(monkeypatch):
+    # 响应为裸数组 [] → resp.json()["choices"] 抛 TypeError（list indices must be integers）→ 转 DistillError
+    def fake_post(*a, **k):
+        return type("R", (), {"raise_for_status": lambda self: None, "json": lambda self: []})()
+
+    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    with pytest.raises(DistillError):
+        ask_agent([], "张書源", "你是张書源。", {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}})

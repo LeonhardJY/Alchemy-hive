@@ -56,7 +56,9 @@ def _parse_json(path: Path) -> list[Message]:
         if not content or content.startswith("["):  # 跳过图片/表情/链接等占位
             continue
         sender = _probe(rec, _SENDER_KEYS) or "unknown"
-        # 方向探测：遍历所有方向键取原始值（保留 bool/int/float/str 类型）
+        # 方向探测：遍历所有方向键取原始值（保留 bool/int/float/str 类型）。
+        # 值为真 → 本人；值为假但 sender 是本人别名（me/self/我，忽略大小写/空白）→ 也归一化为"我"，
+        # 避免下游 extract_pairs 只认精确值导致本人被误判对方。
         if any(k in rec for k in _DIRECTION_KEYS):
             dir_val = None
             for k in _DIRECTION_KEYS:
@@ -64,17 +66,20 @@ def _parse_json(path: Path) -> list[Message]:
                     dir_val = rec[k]
                     break
             if dir_val is not None:
+                truthy = False
                 if isinstance(dir_val, bool):
-                    if dir_val:
-                        sender = "我"
+                    truthy = dir_val
                 elif isinstance(dir_val, (int, float)):
-                    if int(dir_val):
-                        sender = "我"
+                    truthy = bool(dir_val)
                 elif isinstance(dir_val, str):
                     if dir_val.lower() in ("1", "true", "send", "yes"):
-                        sender = "我"
+                        truthy = True
                     elif infer_direction(dir_val) == "me":
-                        sender = "我"
+                        truthy = True
+                if truthy:
+                    sender = "我"
+                elif infer_direction(sender.strip()) == "me":
+                    sender = "我"
         ts = _probe(rec, _TIME_KEYS)
         out.append(Message(sender=sender, content=content, timestamp=ts))
     return out

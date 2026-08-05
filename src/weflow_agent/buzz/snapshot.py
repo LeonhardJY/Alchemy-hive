@@ -46,32 +46,51 @@ def build_snapshot(doc: PersonaDoc) -> dict:
     }
 
 
+def _expect_dict(section, field: str) -> dict:
+    """快照 section 必须是 dict，否则抛 ValueError（中文提示）。"""
+    if not isinstance(section, dict):
+        raise ValueError(f"{field} 必须是对象（dict），收到 {type(section).__name__}")
+    return section
+
+
 def validate_snapshot(snapshot: dict) -> None:
-    """校验 v1 快照必填约束，不合法抛 ValueError。"""
+    """校验 v1 快照必填约束，malformed 输入统一抛 ValueError。"""
+    if not isinstance(snapshot, dict):
+        raise ValueError(f"快照必须是对象（dict），收到 {type(snapshot).__name__}")
     if snapshot.get("format") != _FORMAT:
         raise ValueError(f"format 必须为 {_FORMAT}")
     if snapshot.get("version") != _VERSION:
         raise ValueError(f"version 必须为 {_VERSION}")
-    if not snapshot["definition"]["name"].strip():
+    definition = _expect_dict(snapshot.get("definition"), "definition")
+    name = definition.get("name")
+    if not isinstance(name, str) or not name.strip():
         raise ValueError("definition.name 不能为空")
-    if not snapshot["profile"]["displayName"].strip():
+    profile = _expect_dict(snapshot.get("profile"), "profile")
+    display_name = profile.get("displayName")
+    if not isinstance(display_name, str) or not display_name.strip():
         raise ValueError("profile.displayName 不能为空")
-    for field in ("definition.name", "profile.displayName"):
-        value = snapshot["definition"]["name"] if field == "definition.name" else snapshot["profile"]["displayName"]
+    for field, value in (("definition.name", name), ("profile.displayName", display_name)):
         if _PATH_SEP_RE.search(value):
             raise ValueError(f"{field} 不能包含路径分隔符，收到: {value!r}")
-    memory = snapshot.get("memory", {})
+    memory = snapshot.get("memory")
+    if memory is None:  # memory 缺失或显式 null → 默认空（level none、entries 空）
+        memory = {}
+    memory = _expect_dict(memory, "memory")
     level = memory.get("level", "none")
     if level not in _MEMORY_LEVELS:
         raise ValueError(f"memory.level 必须是 {_MEMORY_LEVELS} 之一")
     entries = memory.get("entries", [])
+    if not isinstance(entries, list):
+        raise ValueError("memory.entries 必须是数组（list）")
     if level == "none" and entries:
         raise ValueError("memory.level 为 none 时 entries 必须为空")
-    for e in entries:
-        slug = e.get("slug", "")
+    for i, e in enumerate(entries):
+        if not isinstance(e, dict):
+            raise ValueError(f"memory.entries[{i}] 必须是对象（dict），收到 {type(e).__name__}")
+        slug = str(e.get("slug") or "")
         if not _SLUG_RE.match(slug):
             raise ValueError(f"memory.entries[].slug 必须是 core 或 mem/ 前缀，收到: {slug!r}")
-        if not str(e.get("body", "")).strip():
+        if not str(e.get("body") or "").strip():
             raise ValueError("memory.entries[].body 不能为空")
 
 

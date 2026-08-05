@@ -72,6 +72,42 @@ def test_direction_string_falls_back_to_alias(tmp_path):
     assert msgs[0].sender == "我"
 
 
+def test_direction_falsy_but_self_alias_normalizes(tmp_path):
+    """isSend=false 但 sender 是本人别名（忽略大小写/空白）→ 仍归一化为"我"，
+    避免下游 extract_pairs 只认精确值把本人误判为对方。"""
+    for flag in (0, False, "0", "false", "no"):
+        f = tmp_path / f"falsy_{flag}.json"
+        f.write_text(json.dumps([
+            {"isSend": flag, "senderUsername": "  ME  ", "createTime": "2023-01-01 00:00:00", "msgContent": "hi"}
+        ], ensure_ascii=False), encoding="utf-8")
+        msgs = parse_messages(str(f))
+        assert len(msgs) == 1
+        assert msgs[0].sender == "我", f"isSend={flag!r} 但 sender='ME' 应归一化为本人"
+
+
+def test_direction_falsy_non_alias_keeps_sender(tmp_path):
+    """isSend=false 且 sender 非本人别名 → 保持原 sender，不被误归一化。"""
+    f = tmp_path / "falsy_other.json"
+    f.write_text(json.dumps([
+        {"isSend": 0, "senderUsername": "张書源", "createTime": "2023-01-01 00:00:00", "msgContent": "对方消息"}
+    ], ensure_ascii=False), encoding="utf-8")
+    msgs = parse_messages(str(f))
+    assert len(msgs) == 1
+    assert msgs[0].sender == "张書源"
+
+
+def test_direction_truthy_overrides_non_alias_sender(tmp_path):
+    """isSend=true 且 sender 非本人别名（如平台账号）→ 仍判本人。"""
+    for flag in (True, 1, "1"):
+        f = tmp_path / f"truthy_{flag}.json"
+        f.write_text(json.dumps([
+            {"isSend": flag, "senderUsername": "abc", "createTime": "2023-01-01 00:00:00", "msgContent": "hi"}
+        ], ensure_ascii=False), encoding="utf-8")
+        msgs = parse_messages(str(f))
+        assert len(msgs) == 1
+        assert msgs[0].sender == "我", f"isSend={flag!r} 应判为本人消息"
+
+
 def test_invalid_json_structure_raises(tmp_path):
     """顶层 dict 既无 messages 也无 data 键 → 抛 ValueError，而非静默返回空列表。"""
     f = tmp_path / "bad.json"
