@@ -22,3 +22,14 @@ def test_e2e_full_pipeline(tmp_path):
     assert (tmp_path / "export" / "张書源.agent.json").exists()
     # 隐私提醒
     assert "脱敏" in r3.output
+
+
+def test_distill_persists_persona_json_with_memory(tmp_path):
+    out = str(tmp_path)
+    runner.invoke(app, ["import", "examples/chat.txt", "--name", "张書源", "--out-dir", out])
+    r = runner.invoke(app, ["distill", "--name", "张書源", "--workdir", out])
+    assert r.exit_code == 0, r.output
+    json_path = tmp_path / "persona" / "张書源.json"
+    assert json_path.exists(), "distill 应持久化完整 PersonaDoc JSON"
+    doc = json.loads(json_path.read_text(encoding="utf-8"))
+    assert "system_prompt" in doc and "memory" in doc  # 完整字段

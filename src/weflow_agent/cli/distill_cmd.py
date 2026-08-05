@@ -28,4 +28,7 @@ def distill_persona(name: str, workdir: str, config_path: str | None) -> None:
     persona_dir.mkdir(parents=True, exist_ok=True)
     out = persona_dir / f"{name}.md"
     out.write_text(doc.system_prompt or doc.model_dump_json(indent=2), encoding="utf-8")
+    # 持久化完整 PersonaDoc（含 memory），供 export 恢复
+    json_path = persona_dir / f"{name}.json"
+    json_path.write_text(doc.model_dump_json(indent=2), encoding="utf-8")
     typer.echo(f"[distill] 已生成 persona -> {out}")
