@@ -1,4 +1,4 @@
-"""weflow-agent 桌面界面（玻璃拟态 glassmorphism，Canvas 自绘薄壳）。
+"""alchemy-hive 桌面界面（玻璃拟态 glassmorphism，Canvas 自绘薄壳）。
 
 业务逻辑在 actions.py。视觉：深色渐变背景上的半透明圆角玻璃卡片、玻璃蓝圆角主按钮。
 输入框用灰色 placeholder（不填示例值）。主操作按钮固定在卡片与日志之间，不会被挤压。
@@ -83,7 +83,7 @@ class PlaceholderEntry(tk.Entry):
 class AgentGUI:
     def __init__(self, root: ttk.Window):
         self.root = root
-        self.root.title("weflow-agent")
+        self.root.title("alchemy-hive")
         self.root.geometry(f"{W}x{H}")
         self.root.resizable(False, False)
         self.style = root.style
@@ -130,7 +130,7 @@ class AgentGUI:
 
     # ── 品牌 + 步骤 ──────────────────────────────────────────
     def _build_header(self) -> None:
-        self.canvas.create_text(40, 34, anchor="w", text="weflow-agent",
+        self.canvas.create_text(40, 34, anchor="w", text="alchemy-hive",
                                 fill=TEXT, font=FONT_BRAND, tags="ui")
         self.canvas.create_text(41, 56, anchor="w", text="把微信聊天蒸馏成 AI 朋友",
                                 fill=MUTED, font=FONT_SMALL, tags="ui")

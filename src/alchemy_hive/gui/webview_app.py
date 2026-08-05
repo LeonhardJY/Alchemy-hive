@@ -1,4 +1,4 @@
-"""weflow-agent 桌面界面（pywebview 新拟物派 Neumorphism）。
+"""Alchemy Hive 桌面界面（pywebview 新拟物派 Neumorphism）。
 
 浅灰同色系 + 双重阴影（右下暗 / 左上亮）模拟光源：凸起=可交互，凹陷=输入区/激活。
 Python 端只做 js_api 桥接，业务逻辑复用 actions.run_pipeline。
@@ -12,7 +12,7 @@ _HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>weflow-agent</title>
+<title>Alchemy Hive</title>
 <style>
   :root {
     --bg-body: #d6dbe3;       /* 页面背景（略深，衬托卡片凸起） */
@@ -140,7 +140,7 @@ _HTML = """<!DOCTYPE html>
 </head>
 <body>
   <div class="brand">
-    <h1>weflow-agent</h1>
+    <h1>Alchemy Hive</h1>
     <p>把微信聊天蒸馏成 AI 朋友</p>
   </div>
 
@@ -250,7 +250,7 @@ def run_gui() -> None:
     """启动 pywebview 新拟物派桌面界面。"""
     api = Api()
     window = webview.create_window(
-        "weflow-agent · 把微信聊天蒸馏成 AI 朋友",
+        "Alchemy Hive · 把微信聊天蒸馏成 AI 朋友",
         html=_HTML,
         js_api=api,
         width=780, height=780,

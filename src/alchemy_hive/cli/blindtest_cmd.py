@@ -9,7 +9,7 @@ from ..core.blindtest import extract_pairs, ask_agent, rate_pairs
 from ..core.safe import safe_filename
 from .distill_cmd import _find_parsed
 
-# 打分用模块级 input 引用：便于测试 monkeypatch weflow_agent.cli.blindtest_cmd.input
+# 打分用模块级 input 引用：便于测试 monkeypatch alchemy_hive.cli.blindtest_cmd.input
 input = input
 
 

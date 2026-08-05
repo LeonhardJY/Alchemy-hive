@@ -1,9 +1,9 @@
 import httpx
 import pytest
 
-from weflow_agent.core.parser import parse_messages
-from weflow_agent.core.distill import DistillError
-from weflow_agent.core.blindtest import extract_pairs, rate_pairs, ask_agent
+from alchemy_hive.core.parser import parse_messages
+from alchemy_hive.core.distill import DistillError
+from alchemy_hive.core.blindtest import extract_pairs, rate_pairs, ask_agent
 
 
 _CONFIG = {"model": {"base_url": "http://x", "api_key": "k", "model": "m"}}
@@ -60,7 +60,7 @@ def test_ask_agent_uses_model(monkeypatch):
         captured["url"] = a[0]
         return _ok_resp()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     reply = ask_agent([], "张書源", "你是张書源。", _CONFIG)
     assert reply == "走，吃饭"
     url = captured["url"]
@@ -75,7 +75,7 @@ def test_ask_agent_null_content_returns_empty(monkeypatch):
     def fake_post(*a, **k):
         return _ok_resp(content=None)
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     assert ask_agent([], "张書源", "你是张書源。", _CONFIG) == ""
 
 
@@ -84,7 +84,7 @@ def test_ask_agent_non_str_content_coerced(monkeypatch):
     def fake_post(*a, **k):
         return _ok_resp(content=42)
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     assert ask_agent([], "张書源", "你是张書源。", _CONFIG) == "42"
 
 
@@ -103,7 +103,7 @@ def test_ask_agent_network_error_raises_distill_error(monkeypatch):
     def raise_connect(*a, **k):
         raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", raise_connect)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", raise_connect)
     with pytest.raises(DistillError):
         ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
@@ -120,7 +120,7 @@ def test_ask_agent_http_status_error_raises_distill_error(monkeypatch):
     def fake_post(*a, **k):
         return type("R", (), {"raise_for_status": raise_status})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
         ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
@@ -135,7 +135,7 @@ def test_ask_agent_parse_error_raises_distill_error(monkeypatch):
     def fake_post(*a, **k):
         return type("R", (), {"raise_for_status": lambda self: None, "json": bad_json})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
         ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
@@ -146,7 +146,7 @@ def test_ask_agent_empty_choices_raises_distill_error(monkeypatch):
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": []}})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
         ask_agent([], "张書源", "你是张書源。", _CONFIG)
 
@@ -156,6 +156,6 @@ def test_ask_agent_list_response_raises_distill_error(monkeypatch):
     def fake_post(*a, **k):
         return type("R", (), {"raise_for_status": lambda self: None, "json": lambda self: []})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
     with pytest.raises(DistillError):
         ask_agent([], "张書源", "你是张書源。", _CONFIG)

@@ -3,15 +3,15 @@ import json
 
 import pytest
 
-from weflow_agent.gui.actions import run_pipeline
-from weflow_agent.core.distill import DistillError
+from alchemy_hive.gui.actions import run_pipeline
+from alchemy_hive.core.distill import DistillError
 
 MODEL_CONFIG = {"base_url": "http://x", "api_key": "k", "model": "m"}
 
 
 @pytest.fixture
 def mock_llm(monkeypatch):
-    """mock weflow_agent.core.distill.httpx.post，返回假 OpenAI 响应，绕过真实网络。
+    """mock alchemy_hive.core.distill.httpx.post，返回假 OpenAI 响应，绕过真实网络。
 
     返回捕获到的请求 kwargs（url/headers/json），供测试断言样本发往所配端点。
     """
@@ -38,7 +38,7 @@ def mock_llm(monkeypatch):
             },
         )()
 
-    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
     return captured
 
 

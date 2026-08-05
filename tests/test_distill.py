@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from weflow_agent.core.parser import parse_messages
-from weflow_agent.core.distill import distill, DistillError
+from alchemy_hive.core.parser import parse_messages
+from alchemy_hive.core.distill import distill, DistillError
 
 
 def test_distill_no_api_key_raises(examples_dir):
@@ -28,7 +28,7 @@ def test_distill_missing_model_name_raises(examples_dir, monkeypatch):
         captured.update(k)
         raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
     with pytest.raises(DistillError):
         distill(msgs, "张書源", {"model": {"base_url": "http://x", "api_key": "k"}})
     # 缺 model 时请求绝不应携带非空 model 名
@@ -43,7 +43,7 @@ def test_distill_llm_failure_raises(examples_dir, monkeypatch):
     def fake_post(*a, **k):
         raise httpx.ConnectError("network down")
 
-    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
     with pytest.raises(DistillError):
         distill(msgs, "张書源", config)
 
@@ -69,7 +69,7 @@ def test_distill_http_status_error_raises(examples_dir, monkeypatch):
     def fake_post(*a, **k):
         return BadResponse()
 
-    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
     with pytest.raises(DistillError):
         distill(msgs, "张書源", config)
 

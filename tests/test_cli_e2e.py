@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from typer.testing import CliRunner
-from weflow_agent.cli.app import app
+from alchemy_hive.cli.app import app
 
 runner = CliRunner()
 
@@ -11,7 +11,7 @@ _MODEL_CFG = {"base_url": "http://x", "api_key": "k", "model": "m"}
 
 
 def _fake_llm(monkeypatch):
-    """mock weflow_agent.core.distill.httpx.post，返回假 OpenAI 响应，绕过真实网络。
+    """mock alchemy_hive.core.distill.httpx.post，返回假 OpenAI 响应，绕过真实网络。
 
     返回捕获到的请求 kwargs（url/headers/json），供测试断言样本发往所配端点。
     """
@@ -27,7 +27,7 @@ def _fake_llm(monkeypatch):
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": _json.dumps(payload, ensure_ascii=False)}}]}})()
 
-    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
     return captured
 
 
@@ -136,8 +136,8 @@ def test_blindtest_command(monkeypatch, tmp_path, examples_dir):
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
-    monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.cli.blindtest_cmd.input", lambda *a: "4")
     out = str(tmp_path)
     cfg = _write_fake_cfg(tmp_path)  # blindtest 需真实 [model] 配置，否则无 key 抛 DistillError
     r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
@@ -158,8 +158,8 @@ def test_blindtest_null_content_does_not_traceback(monkeypatch, tmp_path, exampl
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": None}}]}})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
-    monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.cli.blindtest_cmd.input", lambda *a: "4")
     out = str(tmp_path)
     cfg = _write_fake_cfg(tmp_path)
     r_imp = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "张書源", "--out-dir", out])
@@ -268,8 +268,8 @@ def test_blindtest_default_out_dir_and_workdir(tmp_path, monkeypatch):
         return type("R", (), {"raise_for_status": lambda self: None,
                               "json": lambda self: {"choices": [{"message": {"content": "走，吃饭"}}]}})()
 
-    monkeypatch.setattr("weflow_agent.core.blindtest.httpx.post", fake_post)
-    monkeypatch.setattr("weflow_agent.cli.blindtest_cmd.input", lambda *a: "4")
+    monkeypatch.setattr("alchemy_hive.core.blindtest.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.cli.blindtest_cmd.input", lambda *a: "4")
     chat = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "examples", "chat.txt"))
     monkeypatch.chdir(tmp_path)
     cfg = _write_fake_cfg(tmp_path)  # blindtest 需真实 [model] 配置，否则无 key 抛 DistillError

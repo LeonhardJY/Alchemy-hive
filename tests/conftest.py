@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-# 兜底：即使包未做 editable install，也能让测试导入 weflow_agent（配合 src 布局则需 src 入 path）。
+# 兜底：即使包未做 editable install，也能让测试导入 alchemy_hive（配合 src 布局则需 src 入 path）。
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 EXAMPLES = Path(__file__).parent.parent / "examples"

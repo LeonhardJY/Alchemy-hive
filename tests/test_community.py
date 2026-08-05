@@ -1,4 +1,4 @@
-from weflow_agent.core.community import build_community
+from alchemy_hive.core.community import build_community
 
 
 def test_build_community_lists_agents():

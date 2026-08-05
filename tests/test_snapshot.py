@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from weflow_agent.core.models import PersonaDoc
-from weflow_agent.core.safe import safe_filename
-from weflow_agent.buzz.snapshot import build_snapshot, validate_snapshot, write_snapshot_json
+from alchemy_hive.core.models import PersonaDoc
+from alchemy_hive.core.safe import safe_filename
+from alchemy_hive.buzz.snapshot import build_snapshot, validate_snapshot, write_snapshot_json
 
 
 def _doc() -> PersonaDoc:

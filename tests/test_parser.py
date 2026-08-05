@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from weflow_agent.core.parser import parse_messages
-from weflow_agent.core.models import Message
+from alchemy_hive.core.parser import parse_messages
+from alchemy_hive.core.models import Message
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 

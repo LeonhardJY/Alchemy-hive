@@ -8,7 +8,7 @@ from .blindtest_cmd import run_blindtest
 from ..core.distill import load_config, DistillError
 
 app = typer.Typer(
-    help="weflow-agent: 从微信聊天记录蒸馏人物 AI agent，导出 buzz 快照。",
+    help="alchemy-hive: 从微信聊天记录蒸馏人物 AI agent，导出 buzz 快照。",
     no_args_is_help=True,
     pretty_exceptions_enable=False,  # 用户命令行不渲染巨型 rich traceback（红线：不裸 traceback）
 )
@@ -28,7 +28,7 @@ def _run_command(fn, *args, **kwargs):
         raise typer.Exit(1) from e
 
 @app.command()
-def init(config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件路径")):
+def init(config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件路径")):
     """初始化工作目录，生成配置模板。"""
     typer.echo(f"[init] 配置模板将生成到 {config_path}（M1 占位）")
 
@@ -45,7 +45,7 @@ def import_cmd(
 def distill_cmd(
     name: str = typer.Option(..., "--name", help="人物名"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
-    config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件"),
+    config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
 ):
     """蒸馏 PersonaDoc + persona skill。"""
     _run_command(distill_persona, name, workdir, load_config(config_path))
@@ -74,7 +74,7 @@ def pack_cmd(
 def blindtest_cmd(
     name: str = typer.Option(..., "--name", help="人物名"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
-    config_path: str = typer.Option(".weflow-agent/config.toml", "--config", help="配置文件"),
+    config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
     n: int = typer.Option(5, "--n", help="抽样片段数"),
 ):
     """盲测对拍：真实回复 vs agent 接话，人工评分。"""

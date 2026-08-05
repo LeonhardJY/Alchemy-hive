@@ -2,8 +2,8 @@
 import json
 from pathlib import Path
 
-from weflow_agent.core.safe import safe_filename
-from weflow_agent.core.models import PersonaDoc
+from alchemy_hive.core.safe import safe_filename
+from alchemy_hive.core.models import PersonaDoc
 
 
 def test_safe_filename_keeps_chinese():
@@ -54,7 +54,7 @@ def test_safe_filename_control_chars_replaced():
 
 def test_import_path_traversal_stays_inside_out_dir(tmp_path):
     """端到端：name='../evil' 的解析产物必须落在 out_dir 内，不逃逸到上级目录。"""
-    from weflow_agent.cli.import_cmd import import_chat
+    from alchemy_hive.cli.import_cmd import import_chat
 
     chat = str(Path(__file__).resolve().parent.parent / "examples" / "chat.txt")
     out = tmp_path / "out"
@@ -71,7 +71,7 @@ def test_import_path_traversal_stays_inside_out_dir(tmp_path):
 
 def test_find_parsed_matches_safe_filename(tmp_path):
     """distill 的 _find_parsed 必须用 safe 名查找，否则找不到 import 写入的文件。"""
-    from weflow_agent.cli.distill_cmd import _find_parsed
+    from alchemy_hive.cli.distill_cmd import _find_parsed
 
     safe = safe_filename("../evil")
     (tmp_path / f"{safe}.json").write_text("[]", encoding="utf-8")
@@ -93,7 +93,7 @@ def test_export_and_snapshot_use_safe_name(tmp_path):
     真实流：name（CLI 参数）可含路径分隔符，但 display_name 来自 LLM 不含分隔符；
     export 用 safe 名读产物、用 safe 名写导出文件名。
     """
-    from weflow_agent.cli.export_cmd import export_buzz
+    from alchemy_hive.cli.export_cmd import export_buzz
 
     safe = safe_filename("../evil")
     persona = tmp_path / "persona"
@@ -112,7 +112,7 @@ def test_full_pipeline_path_traversal_safe(tmp_path, monkeypatch):
 
     from typer.testing import CliRunner
 
-    from weflow_agent.cli.app import app
+    from alchemy_hive.cli.app import app
 
     def fake_post(*a, **k):
         payload = {
@@ -130,7 +130,7 @@ def test_full_pipeline_path_traversal_safe(tmp_path, monkeypatch):
             },
         )()
 
-    monkeypatch.setattr("weflow_agent.core.distill.httpx.post", fake_post)
+    monkeypatch.setattr("alchemy_hive.core.distill.httpx.post", fake_post)
     runner = CliRunner()
     out = str(tmp_path)
     cfg = tmp_path / "cfg.toml"

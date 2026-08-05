@@ -13,7 +13,7 @@ class DistillError(RuntimeError):
 
 
 def load_config(path: str | None) -> dict:
-    """读 toml 配置；无文件返回空 dict。支持 .weflow-agent/config.toml。"""
+    """读 toml 配置；无文件返回空 dict。支持 .alchemy-hive/config.toml。"""
     if not path:
         return {}
     from pathlib import Path
@@ -102,8 +102,8 @@ def distill(messages: list[Message], name: str, config: dict) -> PersonaDoc:
     api_key = (config.get("model") or {}).get("api_key")
     if not api_key:
         raise DistillError(
-            "未配置模型 API key。请配置 .weflow-agent/config.toml 的 [model] api_key，"
-            "或使用 `weflow-agent gui` 在界面中填写。"
+            "未配置模型 API key。请配置 .alchemy-hive/config.toml 的 [model] api_key，"
+            "或使用 `alchemy-hive gui` 在界面中填写。"
         )
     doc = _llm_distill(messages, name, config)
     if doc is None or not doc.system_prompt:
