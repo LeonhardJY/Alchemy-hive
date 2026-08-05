@@ -65,7 +65,10 @@ def pack_cmd(
     channel: str = typer.Option("#friends", "--channel", help="群组频道名"),
 ):
     """批量导出多 agent 快照 + 社群清单。"""
-    _run_command(export_pack, [n.strip() for n in names.split(",") if n.strip()], workdir, channel)
+    name_list = [n.strip() for n in names.split(",") if n.strip()]
+    if not name_list:
+        raise typer.BadParameter("--names 至少需要一个名字")
+    _run_command(export_pack, name_list, workdir, channel)
 
 @app.command("blindtest")
 def blindtest_cmd(

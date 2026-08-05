@@ -14,3 +14,10 @@ def test_build_community_lists_agents():
 def test_build_community_triggers():
     comm = build_community(["张書源"], "build/export")
     assert "@张書源" in comm["agents"][0]["triggers"]
+
+
+def test_build_community_custom_export_dir_in_setup():
+    # 回归：自定义 workdir 时 setup 步骤必须指向实际 export_dir，而非硬编码 build/export
+    comm = build_community(["A"], "/tmp/x/export")
+    assert "/tmp/x/export" in comm["setup_steps"][0]
+    assert "build/export" not in comm["setup_steps"][0]

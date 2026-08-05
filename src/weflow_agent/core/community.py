@@ -25,7 +25,7 @@ def build_community(names: list[str], export_dir: str, channel: str = "#friends"
         "channel": channel,
         "agents": build_agents_manifest(names, export_dir, channel),
         "setup_steps": [
-            f"1. 把 build/export/ 下的每个 .agent.json 拖入 buzz 桌面端 My Agents 导入",
+            f"1. 把 {export_dir}/ 下的每个 .agent.json 拖入 buzz 桌面端 My Agents 导入",
             f"2. 在 buzz 新建频道 {channel} 并把以上 agent 加入",
             f"3. 在群里 @agent 的名字触发对话；subscribe/triggers 是建议，导入后可在 buzz UI 微调",
         ],

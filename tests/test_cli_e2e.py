@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from typer.testing import CliRunner
 from weflow_agent.cli.app import app
 
@@ -203,6 +204,48 @@ def test_export_pack_missing_persona_errors(tmp_path):
     r = runner.invoke(app, ["pack", "--names", "不存在的人", "--workdir", out])
     assert r.exit_code != 0
     assert "distill" in r.output
+
+
+def test_export_pack_corrupt_utf8_reports_distill_hint(tmp_path):
+    # 回归：persona JSON 是非法 UTF-8（read_text 抛 UnicodeDecodeError）时，
+    # 必须与损坏 JSON 同样提示重新 distill，不能被通用 ValueError 边界吞成编码错误
+    out = str(tmp_path)
+    (tmp_path / "persona").mkdir(parents=True)
+    (tmp_path / "persona" / "张書源.json").write_bytes(b"\xff\xfe\x00\x80 invalid")
+    r = runner.invoke(app, ["pack", "--names", "张書源", "--workdir", out])
+    assert r.exit_code != 0, r.output
+    assert "distill" in r.output
+    assert "Traceback" not in r.output
+
+
+def test_export_pack_forces_doc_name_to_request_name(tmp_path):
+    # 回归：persona/A.json 内容合法但内部 name=B 时，生成的 .agent.json 必须用请求名 A，
+    # 否则 community.json 清单会指向不存在的 B.agent.json（幽灵文件）
+    out = str(tmp_path)
+    (tmp_path / "persona").mkdir(parents=True)
+    (tmp_path / "persona" / "A.json").write_text(json.dumps({
+        "name": "B",
+        "display_name": "B",
+        "system_prompt": "你是 B。",
+    }, ensure_ascii=False), encoding="utf-8")
+    r = runner.invoke(app, ["pack", "--names", "A", "--workdir", out])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "export" / "A.agent.json").exists()
+    assert not (tmp_path / "export" / "B.agent.json").exists()
+    comm = json.loads((tmp_path / "export" / "community.json").read_text(encoding="utf-8"))
+    assert len(comm["agents"]) == 1
+    # 清单引用的路径必须真实存在（名称不一致时不指向幽灵文件）
+    assert Path(comm["agents"][0]["agentJson"]).exists()
+
+
+def test_pack_empty_names_reports_clear_error(tmp_path):
+    # 回归：--names 过滤后为空列表时直接报错，避免生成空 community.json
+    out = str(tmp_path)
+    r = runner.invoke(app, ["pack", "--names", ",,", "--workdir", out])
+    assert r.exit_code != 0, r.output
+    assert "至少需要一个名字" in r.output
+    assert not (tmp_path / "export" / "community.json").exists()
+    assert "Traceback" not in r.output
 
 
 def test_e2e_import_missing_file_reports_clean_error(tmp_path):

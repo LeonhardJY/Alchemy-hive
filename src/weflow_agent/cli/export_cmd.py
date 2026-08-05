@@ -18,8 +18,8 @@ def export_buzz(name: str, workdir: str) -> None:
         # 优先从完整 PersonaDoc 恢复（含 memory）
         try:
             doc = PersonaDoc.model_validate(json.loads(json_path.read_text(encoding="utf-8")))
-        except (json.JSONDecodeError, ValidationError):
-            # 损坏 json 是主产物问题：明确报错让用户重新蒸馏，不回退 md
+        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError):
+            # 损坏 json（含非法 UTF-8 编码）是主产物问题：明确报错让用户重新蒸馏，不回退 md
             raise typer.BadParameter(
                 f"persona/{safe}.json 损坏或格式不符，请删除后重新运行 distill"
             )
@@ -47,11 +47,14 @@ def export_pack(names: list[str], workdir: str, channel: str = "#friends") -> st
                 f"未找到 {name} 的蒸馏产物 {persona_path}，请先运行 import + distill")
         try:
             doc = PersonaDoc.model_validate(json.loads(persona_path.read_text(encoding="utf-8")))
-        except (json.JSONDecodeError, ValidationError):
-            # 损坏 json 是主产物问题：明确报错让用户重新蒸馏
+        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError):
+            # 损坏 json（含非法 UTF-8 编码）是主产物问题：明确报错让用户重新蒸馏
             raise typer.BadParameter(
                 f"persona/{safe_filename(name)}.json 损坏或格式不符，请删除后重新运行 distill"
             )
+        # 强制统一 name 为请求名：保证生成的 .agent.json 文件名与 community.json 清单路径一致
+        # （persona 内部 name 可能是 LLM 蒸馏时误写的别名，不能让它决定文件名）
+        doc.name = name
         write_snapshot_json(doc, str(export_dir))
     comm = build_community(names, str(export_dir), channel)
     comm_path = export_dir / "community.json"
