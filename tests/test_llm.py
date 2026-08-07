@@ -72,3 +72,55 @@ def test_content_null_returns_empty(monkeypatch):
 
     monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     assert chat_completion(_CFG, [{"role": "user", "content": "hi"}]) == ""
+
+
+def test_max_tokens_sent_when_set(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured.update(json)
+        return _ok_resp()
+
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    chat_completion(_CFG, [{"role": "user", "content": "hi"}], max_tokens=10000)
+    assert captured.get("max_tokens") == 10000
+
+
+def test_max_tokens_omitted_when_none(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured.update(json)
+        return _ok_resp()
+
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    chat_completion(_CFG, [{"role": "user", "content": "hi"}])
+    assert "max_tokens" not in captured
+
+
+def test_deepseek_thinking_disabled(monkeypatch):
+    """DeepSeek V4 思考模式会把 token 预算吃光、content 为 null → 默认关思考模式。"""
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured.update(json)
+        return _ok_resp()
+
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    chat_completion(
+        {"model": {"base_url": "https://api.deepseek.com/v1", "api_key": "k", "model": "deepseek-v4-flash"}},
+        [{"role": "user", "content": "hi"}],
+    )
+    assert captured.get("thinking") == {"type": "disabled"}
+
+
+def test_non_deepseek_no_thinking_field(monkeypatch):
+    captured: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured.update(json)
+        return _ok_resp()
+
+    monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    chat_completion(_CFG, [{"role": "user", "content": "hi"}])  # base_url=http://x，非 DeepSeek
+    assert "thinking" not in captured

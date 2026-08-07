@@ -59,11 +59,43 @@ _HTML = """<!DOCTYPE html>
   .brand { margin-bottom: 8px; }
   .brand h1 { font-size: 24px; font-weight: 700; color: #1f2733; letter-spacing: .5px; }
   .brand p { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .privacy-note { color: var(--ok); font-size: 11.5px; }
+  .key-note { font-size: 11px; color: var(--warn); margin-top: 6px; line-height: 1.6; }
 
-  /* 步骤指示：当前步高亮蓝 */
-  .steps { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin: 18px 0 10px; font-weight: 600; }
-  .steps .sep { opacity: .4; font-weight: 400; }
-  .steps .active { color: var(--accent); }
+  /* 导入buzz 指南 */
+  .guide-step { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--text); line-height: 1.7; margin-bottom: 9px; }
+  .gs-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+  .buzz-btn {
+    width: 100%; padding: 14px; margin-top: 14px; border: none; border-radius: var(--radius-ctl);
+    background: linear-gradient(135deg, #2e9e57, #258549); color: #fff;
+    font-size: 15px; font-weight: 700; letter-spacing: 2px; cursor: pointer;
+    box-shadow: 6px 6px 12px var(--dark), -6px -6px 12px var(--light); transition: all .2s;
+  }
+  .buzz-btn:hover { filter: brightness(1.06); }
+  .buzz-btn:active { box-shadow: inset 4px 4px 8px rgba(0,0,0,.3); }
+  .dev-note { margin-top: 12px; font-size: 11px; color: var(--placeholder); line-height: 1.6; }
+  .dev-note code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; font-family: Consolas, "Microsoft YaHei UI", monospace; }
+
+  /* 四步进度条：序号圆点 + 连接线，完成变绿打勾 */
+  .steps { display: flex; align-items: center; justify-content: center; margin: 20px 0 18px; }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--bg-elem); color: var(--muted);
+    font-size: 14px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 5px 5px 10px var(--dark), -5px -5px 10px var(--light);
+    transition: all .25s;
+  }
+  .dot .check { display: none; }
+  .step-label { font-size: 12px; color: var(--muted); font-weight: 600; transition: color .25s; }
+  .step.active .dot { background: var(--accent); color: #fff; box-shadow: inset 3px 3px 6px rgba(0,0,0,.25); }
+  .step.active .step-label { color: var(--accent); }
+  .step.done .dot { background: var(--ok); color: #fff; }
+  .step.done .dot .num { display: none; }
+  .step.done .dot .check { display: inline; }
+  .step.done .step-label { color: var(--ok); }
+  .step-sep { width: 34px; height: 3px; border-radius: 2px; background: var(--dark); opacity: .22; margin: 0 12px; transform: translateY(-9px); }
 
   /* 卡片：凸起 */
   .card {
@@ -157,6 +189,27 @@ _HTML = """<!DOCTYPE html>
   @keyframes spin { to { transform: rotate(360deg); } }
   .hidden { display: none; }
 
+  /* 成功横幅 + 完成态步骤（绿） + 导入按钮脉冲 */
+  .success-banner {
+    display: none;
+    background: linear-gradient(135deg, #2e9e57, #258549);
+    color: #fff;
+    border-radius: var(--radius-card);
+    padding: 14px 18px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.7;
+    box-shadow: 8px 8px 16px #9aa3af, -8px -8px 16px #ffffff;
+  }
+  .success-banner.show { display: block; }
+  .success-banner b { font-size: 14px; letter-spacing: 1px; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(46,158,87,.5); }
+    70% { box-shadow: 0 0 0 14px rgba(46,158,87,0); }
+    100% { box-shadow: 0 0 0 0 rgba(46,158,87,0); }
+  }
+  .btn-pulse { animation: pulse 1.1s 2; }
+
   /* 日志：突出显示面板（凹陷 + 大字号 + 深字） */
   .log-wrap { margin-top: 2px; }
   .log-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
@@ -183,17 +236,22 @@ _HTML = """<!DOCTYPE html>
 <body>
   <div class="brand">
     <h1>Alchemy Hive</h1>
-    <p>把微信聊天蒸馏成 AI 朋友</p>
+    <p>把微信聊天蒸馏成 AI 朋友，导入 <b>buzz</b> 随时开聊、组建无数个 AI 社群</p>
+    <p class="privacy-note">本项目完全开源，不会获取您的任何个人信息和 API key。</p>
   </div>
 
   <div class="steps">
-    <span class="active" id="s1">1 原料</span><span class="sep">·</span>
-    <span id="s2">2 蒸馏</span><span class="sep">·</span>
-    <span id="s3">3 成品</span>
+    <div class="step active" id="s1"><div class="dot"><span class="num">1</span><span class="check">✓</span></div><div class="step-label">原料导入</div></div>
+    <div class="step-sep"></div>
+    <div class="step" id="s2"><div class="dot"><span class="num">2</span><span class="check">✓</span></div><div class="step-label">蒸馏人物</div></div>
+    <div class="step-sep"></div>
+    <div class="step" id="s3"><div class="dot"><span class="num">3</span><span class="check">✓</span></div><div class="step-label">成品文件</div></div>
+    <div class="step-sep"></div>
+    <div class="step" id="s4"><div class="dot"><span class="num">4</span><span class="check">✓</span></div><div class="step-label">导入buzz</div></div>
   </div>
 
   <div class="card">
-    <div class="label">第一步 · 原料 — 把微信聊天记录文件拖进来，或点「浏览」选择</div>
+    <div class="label">原料导入 · 把聊天记录拖进来，或点「浏览」选择</div>
     <div class="dropzone" id="dropzone"
          ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
       <div id="drop_hint">把聊天文件（WeFlow 导出 .json 或微信 .txt）拖到这里</div>
@@ -206,8 +264,10 @@ _HTML = """<!DOCTYPE html>
   </div>
 
   <div class="card">
-    <div class="label">第二步 · 蒸馏设置</div>
+    <div class="label">蒸馏人物 · 性格画像与模型（画像越具体越像 TA）</div>
     <input class="field" id="name" placeholder="Ta 的名称（如：小明）">
+    <div class="spacer"></div>
+    <input class="field" id="profile" placeholder="性格画像（可选，最高优先级）如：INTJ 摩羯座 爱吐槽 重感情">
     <div class="spacer"></div>
     <select class="field" id="provider" onchange="onProvider()">
       <option value="custom" selected>自定义模型（手动填写地址和模型名）</option>
@@ -228,7 +288,8 @@ _HTML = """<!DOCTYPE html>
     <input class="field" id="model" placeholder="模型名（自动匹配，可再修改）">
     <div class="spacer"></div>
     <input class="field" id="api_key" type="password" placeholder="API key（向模型供应商申请，必需）">
-    <div class="hint">选择供应商后会自动填好地址和模型名；想用别的模型直接改这两格即可。API key 请去对应供应商官网申请。</div>
+    <div class="key-note">本项目完全开源，不会获取您的任何个人信息和 key；API key 仅用于调用您自己选择的模型服务，只保存在本地。</div>
+    <div class="hint">选择供应商后会自动填好地址和模型名；想用别的模型直接改这两格即可。API key 请去对应供应商官网申请。性格画像填得越具体，蒸馏出来越像 TA（如：INTJ 摩羯座 爱吐槽 重感情 游戏宅）。</div>
     <div class="spacer"></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);cursor:pointer;">
       <input type="checkbox" id="with_memory" style="accent-color:var(--accent);width:15px;height:15px;">
@@ -240,8 +301,9 @@ _HTML = """<!DOCTYPE html>
     <span class="spinner hidden" id="spinner"></span><span id="go_text">开始蒸馏</span>
   </button>
 
-  <div class="row" style="margin:-14px 0 16px; justify-content:center;">
-    <button class="ghost" onclick="buzzImport()">导入到 buzz · 打开导出文件夹并复制路径</button>
+  <div class="success-banner" id="success_banner">
+    <b>蒸馏成功 ✓</b><br>
+    已生成 <span id="success_path"></span> —— 往下拉到「导入buzz」卡片，一键装进 buzz。
   </div>
 
   <div class="log-wrap">
@@ -249,6 +311,15 @@ _HTML = """<!DOCTYPE html>
     <div class="log" id="log">
       <span class="empty">运行后在这里查看步骤日志…</span>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="label">导入buzz · 把 AI 朋友装进 buzz 开聊（buzz 是免费开源 AI 聊天室，可组建无数个社群）</div>
+    <div class="guide-step"><span class="gs-num">1</span><span>点下面的按钮 —— 自动打开导出文件夹并复制路径；<b>名称栏不填也会全部导入</b></span></div>
+    <div class="guide-step"><span class="gs-num">2</span><span>打开 buzz 桌面端 → 进 My Agents → 点「导入」→ 粘贴路径（或直接把文件拖进窗口）</span></div>
+    <div class="guide-step"><span class="gs-num">3</span><span>在频道里 <b>@这个 agent</b> 就能聊天；把多个 agent 拉进同一频道就是一个社群，想建几个建几个</span></div>
+    <button class="buzz-btn" id="buzz_btn" onclick="buzzImport()">导入到 buzz · 打开文件夹并复制路径</button>
+    <div class="dev-note">开发者进阶：想跳过手动导入、让 buzz-cli 直连 relay 自动建号？终端运行 <code>alchemy-hive buzz-setup</code> 完成配置，之后 <code>buzz-import</code> 免填直连。</div>
   </div>
 
 <script>
@@ -278,15 +349,25 @@ _HTML = """<!DOCTYPE html>
     log.scrollTop = log.scrollHeight;
   }
 
+  /* 四步进度：markStep(n,state) —— n 之前全部变绿 done，n 高亮，之后待办 */
+  function markStep(n, state) {
+    for (var i = 1; i <= 4; i++) {
+      var s = el("s" + i);
+      if (!s) continue;
+      if (i === n) s.className = "step " + state;
+      else if (i < n) s.className = "step done";
+      else s.className = "step";
+    }
+  }
+
   function appendClassified(line) {
     var cls = "plain";
     if (line.indexOf("[import]") === 0) cls = "info";
     if (line.indexOf("[distill]") === 0 || line.indexOf("[export]") === 0 || line.indexOf("[buzz]") === 0) cls = "ok";
     if (line.indexOf("提醒") >= 0) cls = "warn";
     append(line, cls);
-    if (line.indexOf("[import]") === 0) el("s1").className = "active";
-    if (line.indexOf("[distill]") === 0) el("s2").className = "active";
-    if (line.indexOf("[export]") === 0) el("s3").className = "active";
+    if (line.indexOf("[import]") === 0) markStep(2, "active");   // 原料导入完成 → 蒸馏中
+    if (line.indexOf("[export]") === 0) markStep(3, "active");   // 蒸馏完成 → 成品中
   }
 
   /* 由 Python 端 evaluate_js 实时推送日志 */
@@ -357,10 +438,10 @@ _HTML = """<!DOCTYPE html>
     setStatus("正在识别文件格式…");
     pywebview.api.inspect_chat(path).then(function (res) {
       if (res.ok) {
-        el("s1").className = "active";
+        markStep(1, "active");   // 原料导入：已选文件
         setStatus("已识别：" + res.format + " · " + res.count + " 条消息", "ok");
       } else {
-        el("s1").className = "active";
+        markStep(1, "active");
         setStatus("无法识别：" + res.error, "err");
       }
     });
@@ -388,29 +469,39 @@ _HTML = """<!DOCTYPE html>
     el("spinner").classList.remove("hidden");
     el("go_text").textContent = "正在蒸馏中…";
     el("log").innerHTML = "";
-    el("s1").className = "active";
+    el("success_banner").classList.remove("show");
+    markStep(2, "active");   // 原料就绪 → 蒸馏中
 
-    pywebview.api.start(chat, name, base_url, api_key, model, el("with_memory").checked).then(function (res) {
+    pywebview.api.start(chat, name, base_url, api_key, model, el("with_memory").checked, el("profile").value.trim()).then(function (res) {
       go.disabled = false;
       el("spinner").classList.add("hidden");
       el("go_text").textContent = "开始蒸馏";
       if (res.ok) {
         if (!res.streamed) res.logs.forEach(appendClassified);   // 流式失败时补打
-        append("完成 可在 build/export/ 找到 .agent.json，点击下方「导入到 buzz」即可。", "ok");
-        el("s1").className = "active"; el("s2").className = "active"; el("s3").className = "active";
+        var exportPath = "build/export/";
+        (res.logs || []).forEach(function (l) {
+          var m = l.match(/已生成 -> (.+)/);
+          if (l.indexOf("[export]") === 0 && m) exportPath = m[1];
+        });
+        el("success_path").textContent = exportPath;
+        el("success_banner").classList.add("show");
+        markStep(4, "active");   // 成品完成 → 下一步导入 buzz
+        var bb = el("buzz_btn");
+        bb.classList.remove("btn-pulse"); void bb.offsetWidth; bb.classList.add("btn-pulse");
+        append("完成 已生成 " + exportPath + "，点击「导入到 buzz」即可。", "ok");
       } else {
         append("错误: " + res.error, "err");
       }
     });
   }
 
-  /* 导入到 buzz：打开导出文件夹 + 复制文件完整路径 */
+  /* 一键导入到 buzz：不填名称也会导入全部成品（高容错） */
   function buzzImport() {
-    var name = el("name").value.trim();
-    if (!name) { append("请先填写 Ta 的名称。", "err"); return; }
-    pywebview.api.import_buzz(name).then(function (res) {
+    markStep(4, "active");
+    pywebview.api.import_buzz(el("name").value.trim()).then(function (res) {
       (res.logs || []).forEach(appendClassified);
-      if (!res.ok) append("错误: " + res.error, "err");
+      if (res.ok) markStep(4, "done");
+      else append("错误: " + res.error, "err");
     });
   }
 </script>
@@ -459,7 +550,7 @@ class Api:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def start(self, chat: str, name: str, base_url: str, api_key: str, model: str, with_memory: bool = False) -> dict:
+    def start(self, chat: str, name: str, base_url: str, api_key: str, model: str, with_memory: bool = False, profile: str = "") -> dict:
         model_config = {"base_url": base_url, "api_key": api_key, "model": model}
         streamed = False
 
@@ -475,7 +566,7 @@ class Api:
                 pass
 
         try:
-            logs = run_pipeline(chat, name, model_config, "build", with_memory, on_log=on_log)
+            logs = run_pipeline(chat, name, model_config, "build", with_memory, on_log=on_log, manual_profile=profile)
             return {"ok": True, "logs": logs, "streamed": streamed}
         except Exception as e:  # noqa: BLE001 — 边界统一转给前端展示
             return {"ok": False, "error": str(e)}
@@ -496,8 +587,8 @@ def run_gui() -> None:
         "Alchemy Hive · 把微信聊天蒸馏成 AI 朋友",
         html=_HTML,
         js_api=api,
-        width=780, height=860,
-        min_size=(620, 700),
+        width=780, height=940,
+        min_size=(620, 720),
         background_color="#e0e5ec",
     )
     _GUI_WINDOW = window

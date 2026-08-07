@@ -16,7 +16,7 @@ app = typer.Typer(
 
 
 def _run_command(fn, *args, **kwargs):
-    """执行命令主体：业务/IO 异常（LLMError、FileNotFoundError、ValueError、OSError）统一渲染为
+    """执行命令主体：业务/IO 异常（LLMError、ValueError、OSError）统一渲染为
     一句中文错误并退出 1，避免裸 traceback。
 
     typer 0.24 无 exception_handler 全局钩子，故由可能抛异常的 import/distill/export/blindtest 命令统一走此入口。
@@ -24,14 +24,27 @@ def _run_command(fn, *args, **kwargs):
     """
     try:
         fn(*args, **kwargs)
-    except (FileNotFoundError, ValueError, OSError, LLMError) as e:
+    except (ValueError, OSError, LLMError) as e:
         typer.echo(f"错误: {e}", err=True)
         raise typer.Exit(1) from e
 
-@app.command()
-def init(config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件路径")):
-    """初始化工作目录，生成配置模板。"""
-    typer.echo(f"[init] 配置模板将生成到 {config_path}（M1 占位）")
+@app.command("init")
+def init_cmd(config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件路径")):
+    """初始化：把 config.toml.example 复制为 config.toml（已存在则跳过）。"""
+    from pathlib import Path
+    p = Path(config_path)
+    if p.exists():
+        typer.echo(f"[init] 配置已存在：{p}（无需重新生成）")
+        return
+    example = p.with_name("config.toml.example")
+    if not example.exists():
+        example = Path(".alchemy-hive/config.toml.example")
+    if not example.exists():
+        typer.echo(f"[init] 未找到模板 {example}，请确认在项目根目录运行", err=True)
+        raise typer.Exit(1)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+    typer.echo(f"[init] 已生成配置 {p}，填入 API key 后即可运行 distill")
 
 @app.command("import")
 def import_cmd(
@@ -47,9 +60,11 @@ def distill_cmd(
     name: str = typer.Option(..., "--name", help="人物名"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
     config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
+    profile: str = typer.Option("", "--profile", help="手动画像：性格标签，如 'INTJ 摩羯座 爱吐槽 重感情'（最高优先级）"),
+    fix: str = typer.Option(None, "--fix", help="纠正：如 '他不会这样，他其实很细心'（叠加到校正记录）"),
 ):
-    """蒸馏 PersonaDoc + persona skill。"""
-    _run_command(distill_persona, name, workdir, load_config(config_path))
+    """蒸馏 PersonaDoc + persona skill（支持手动画像与交互校正）。"""
+    _run_command(distill_persona, name, workdir, load_config(config_path), profile, fix)
 
 @app.command("export")
 def export_cmd(
@@ -83,14 +98,37 @@ def blindtest_cmd(
     """盲测对拍：真实回复 vs agent 接话，人工评分。"""
     _run_command(run_blindtest, name, workdir, load_config(config_path), n)
 
+@app.command("doctor")
+def doctor_cmd(config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件路径")):
+    """检查配置与端点连通性（GET /models，不发 LLM 请求、不消耗 token）。"""
+    from ..core.health import run_doctor
+    for line in run_doctor(config_path):
+        typer.echo(line)
+
+
 @app.command("buzz-import")
 def buzz_import_cmd(
-    name: str = typer.Option(..., "--name", help="人物名"),
+    name: str = typer.Option("", "--name", help="人物名（不填则导入 build/export 下全部成品）"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    channel: str = typer.Option(None, "--channel", help="buzz 频道 UUID（不填则读配置 [buzz]）"),
+    config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
 ):
-    """把导出的 .agent.json 送到 buzz：打开导出文件夹 + 复制完整路径。"""
-    from ..buzz.importing import import_to_buzz
-    for line in import_to_buzz(name, workdir):
+    """一键导入 buzz：打开导出文件夹 + 复制路径；配置齐全时用 buzz-cli 直连建号。高容错，不填名称自动导入全部。"""
+    from ..buzz.importing import import_to_buzz, _load_buzz_config
+    bz = _load_buzz_config(config_path)
+    for line in import_to_buzz(name, workdir, channel or bz["channel"], bz["relay_url"]):
+        typer.echo(line)
+
+
+@app.command("buzz-setup")
+def buzz_setup_cmd(
+    config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
+    channel: str = typer.Option(None, "--channel", help="要存进配置的频道 UUID"),
+    relay: str = typer.Option(None, "--relay", help="relay 地址（默认 http://localhost:3000）"),
+):
+    """开发者引导：检查 buzz-cli/密钥/relay，配置直连建号，把 channel 存进 [buzz] 配置。"""
+    from ..buzz.importing import buzz_setup
+    for line in buzz_setup(config_path, channel, relay):
         typer.echo(line)
 
 

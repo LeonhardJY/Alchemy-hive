@@ -13,6 +13,7 @@ _MODEL_CFG = {"base_url": "http://x", "api_key": "k", "model": "m"}
 def _fake_llm(monkeypatch):
     """mock alchemy_hive.core.llm.httpx.post，返回假 OpenAI 响应，绕过真实网络。
 
+    两阶段：analyze(json_mode) 返回分析 JSON，build(非 json_mode) 返回 persona Markdown。
     返回捕获到的请求 kwargs（url/headers/json），供测试断言样本发往所配端点。
     """
     import json as _json
@@ -22,10 +23,17 @@ def _fake_llm(monkeypatch):
     def fake_post(*a, **k):
         captured.update(k)
         captured["url"] = a[0]
-        payload = {"display_name": "小明", "relationship": "好朋友",
-                   "expression_rules": ["一次只说一句话"], "system_prompt": "你是小明。"}
+        body = k.get("json") or {}
+        if body.get("response_format"):  # analyze 阶段
+            content = _json.dumps({
+                "display_name": "小明", "relationship": "好朋友",
+                "expression_rules": ["一次只说一句话"],
+                "memories": [{"slug": "core", "body": "一起在食堂研究菜单"}],
+            }, ensure_ascii=False)
+        else:  # build 阶段
+            content = "你是小明。\n一次只说一句话。"
         return type("R", (), {"raise_for_status": lambda self: None,
-                              "json": lambda self: {"choices": [{"message": {"content": _json.dumps(payload, ensure_ascii=False)}}]}})()
+                              "json": lambda self: {"choices": [{"message": {"content": content}}]}})()
 
     monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
     return captured
@@ -188,6 +196,42 @@ def test_blindtest_no_key_reports_clean_error(tmp_path, examples_dir):
     assert r.exit_code != 0, r.output
     assert "Traceback" not in r.output
     assert "未配置模型" in r.output and "API key" in r.output
+
+
+def test_e2e_init_copies_template(tmp_path):
+    """init 把 config.toml.example 复制为 config.toml；已存在则跳过。"""
+    from pathlib import Path as _P
+    # 用临时目录模拟项目根：造一个 example
+    root = tmp_path / "root"
+    al = root / ".alchemy-hive"
+    al.mkdir(parents=True)
+    (al / "config.toml.example").write_text("[model]\nbase_url=\"x\"\napi_key=\"\"\nmodel=\"m\"\n", encoding="utf-8")
+    cfg = al / "config.toml"
+    r = runner.invoke(app, ["init", "--config", str(cfg)])
+    assert r.exit_code == 0, r.output
+    assert cfg.exists() and "base_url" in cfg.read_text(encoding="utf-8")
+    # 已存在 → 跳过
+    r2 = runner.invoke(app, ["init", "--config", str(cfg)])
+    assert r2.exit_code == 0 and "已存在" in r2.output
+
+
+def test_e2e_distill_with_profile_and_fix(tmp_path, monkeypatch, examples_dir):
+    """交互式蒸馏：--profile 手动画像 + --fix 校正，都应进产物并持久化。"""
+    _fake_llm(monkeypatch)
+    out = str(tmp_path)
+    cfg = _write_fake_cfg(tmp_path)
+    r1 = runner.invoke(app, ["import", str(examples_dir / "chat.txt"), "--name", "小明", "--out-dir", out])
+    assert r1.exit_code == 0, r1.output
+    r2 = runner.invoke(app, ["distill", "--name", "小明", "--workdir", out, "--config", cfg,
+                             "--profile", "INTJ 摩羯座 爱吐槽"])
+    assert r2.exit_code == 0, r2.output
+    assert "手动画像" in r2.output
+    r3 = runner.invoke(app, ["distill", "--name", "小明", "--workdir", out, "--config", cfg, "--fix", "他不会这样"])
+    assert r3.exit_code == 0, r3.output
+    assert "纠正" in r3.output
+    persona = json.loads((tmp_path / "persona" / "小明.json").read_text(encoding="utf-8"))
+    assert persona.get("manual_profile") == "INTJ 摩羯座 爱吐槽"
+    assert persona.get("corrections") == ["他不会这样"]
 
 
 def test_export_pack_generates_multiple_agents(tmp_path, monkeypatch, examples_dir):

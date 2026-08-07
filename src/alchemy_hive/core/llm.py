@@ -3,7 +3,6 @@
 统一负责：模型配置校验、请求组装、超时、对瞬时错误的有限重试、
 JSON 模式（response_format）支持与兼容回退、非字符串响应归一化。
 """
-import json
 import time
 
 import httpx
@@ -37,17 +36,22 @@ def chat_completion(
     timeout: float = 60,
     max_retries: int = 2,
     backoff: float = 0.4,
+    max_tokens: int | None = None,
 ) -> str:
     """调 OpenAI-compatible /chat/completions，返回首个 choice 的文本内容。
 
     配置缺失立即抛 LLMError（不发请求）；对连接/超时/5xx 做有限重试；
     4xx（认证/参数错误）与响应解析错误不重试，直接抛 LLMError。
     json_mode 被供应商拒绝（400/422）时自动去掉 response_format 重试一次。
+    max_tokens 为 None 时不发送（由模型决定输出上限），否则透传给请求。
     """
     _raise_config_error(config)
     model = config["model"]
     url = f"{model['base_url'].rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {model['api_key']}"}
+    # DeepSeek V4 思考模式会把 token 预算吃光导致 content 为 null（推理模型返回空正文）。
+    # 蒸馏/盲测要的是直接答案，故对 DeepSeek 默认关思考模式。
+    is_deepseek = "deepseek.com" in url
 
     def request(use_json_mode: bool) -> str:
         payload = {
@@ -55,8 +59,12 @@ def chat_completion(
             "messages": messages,
             "temperature": temperature,
         }
+        if is_deepseek:
+            payload["thinking"] = {"type": "disabled"}
         if use_json_mode:
             payload["response_format"] = {"type": "json_object"}
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         last_error: BaseException | None = None
         for attempt in range(max_retries + 1):
             try:
@@ -67,19 +75,23 @@ def chat_completion(
                 if not isinstance(content, str):
                     content = "" if content is None else str(content)
                 return content.strip()
+            except httpx.TimeoutException as e:
+                raise LLMError(f"模型请求超时（>{timeout}s）：网络较慢或请求/响应过大") from e
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code if e.response is not None else 0
                 if use_json_mode and status in (400, 422):
                     raise _UnsupportedJSONMode() from e
                 if status < 500:  # 4xx 重试无意义，报清错误让用户知道
-                    raise LLMError(f"LLM 调用失败（HTTP {status}），请检查 base_url/api_key/model") from e
+                    raise LLMError(f"模型服务返回 HTTP {status}（请检查 API key / 模型名 / 余额）") from e
                 last_error = e
             except httpx.HTTPError as e:
-                last_error = e  # 连接/超时等瞬时错误：可重试
-            except (ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
+                last_error = e  # 连接等瞬时错误：可重试
+            except (ValueError, KeyError, IndexError, TypeError) as e:
                 raise LLMError("LLM 调用失败：响应无法解析") from e
             if attempt < max_retries:
                 time.sleep(backoff)
+        if isinstance(last_error, httpx.ConnectError):
+            raise LLMError(f"无法连接模型服务 {model['base_url']}，请检查网络与地址") from last_error
         raise LLMError("LLM 调用失败，请检查配置和网络") from last_error
 
     try:

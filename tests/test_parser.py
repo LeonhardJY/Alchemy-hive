@@ -184,3 +184,60 @@ def test_parse_skips_non_dict_records(tmp_path):
     msgs = parse_messages(str(f))
     assert len(msgs) == 1
     assert msgs[0].content == "hi"
+
+
+# ---- 大 txt 与格式健壮性（本地测试，不发 API）----
+
+
+def test_parse_large_txt(tmp_path):
+    """大 txt（10 万行）流式解析：消息数、首尾正确，不整读文件。"""
+    f = tmp_path / "big.txt"
+    with f.open("w", encoding="utf-8") as fh:
+        for i in range(100_000):
+            fh.write(f"2023-07-24 09:29:09 '小明'\n消息{i}\n")
+    msgs = parse_messages(str(f))
+    assert len(msgs) == 100_000
+    assert msgs[0].content == "消息0"
+    assert msgs[-1].content == "消息99999"
+
+
+def test_parse_txt_special_whitespace_separator(tmp_path):
+    """微信导出用  (U+2005) 等特殊空白分隔时间戳与发送者 → 应正常解析。"""
+    f = tmp_path / "ws.txt"
+    f.write_text("2023-07-24 09:29:09 '小明'\n在吗？\n", encoding="utf-8")
+    msgs = parse_messages(str(f))
+    assert len(msgs) == 1
+    assert msgs[0].sender == "小明"
+    assert msgs[0].content == "在吗？"
+
+
+def test_parse_txt_unquoted_sender(tmp_path):
+    """发送者不带引号（'2023-07-24 09:29:09 小明'）→ 应正常解析。"""
+    f = tmp_path / "unquoted.txt"
+    f.write_text("2023-07-24 09:29:09 小明\n在吗？\n", encoding="utf-8")
+    msgs = parse_messages(str(f))
+    assert len(msgs) == 1
+    assert msgs[0].sender == "小明"
+
+
+def test_parse_txt_single_digit_hour(tmp_path):
+    """小时为个位数（9:29:09 而非 09:29:09）→ 应正常解析。"""
+    f = tmp_path / "hour.txt"
+    f.write_text("2023-07-24 9:29:09 '小明'\n早\n", encoding="utf-8")
+    msgs = parse_messages(str(f))
+    assert len(msgs) == 1
+    assert msgs[0].content == "早"
+
+
+def test_parse_garbage_txt_raises(tmp_path):
+    """整份 txt 没有时间戳行（不是微信导出）→ 明确报错，而非产出 unknown 发送者消息。"""
+    f = tmp_path / "garbage.txt"
+    f.write_text("这只是一段普通文字\n没有任何时间戳\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="时间戳"):
+        parse_messages(str(f))
+
+
+def test_parse_empty_txt_returns_empty(tmp_path):
+    f = tmp_path / "empty.txt"
+    f.write_text("", encoding="utf-8")
+    assert parse_messages(str(f)) == []

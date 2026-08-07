@@ -38,7 +38,7 @@ def ask_agent(context_msgs: list[Message], name: str, system_prompt: str, config
         raise DistillError(str(e)) from e
 
 
-def rate_pairs(pairs: list[dict], agent_replies: list[str], ratings: dict[int, int]) -> dict:
+def rate_pairs(pairs: list[dict], ratings: dict[int, int]) -> dict:
     """汇总评分：返回条数、平均分、各条分数。"""
     scores = [ratings[i] for i in range(len(pairs)) if i in ratings]
     return {

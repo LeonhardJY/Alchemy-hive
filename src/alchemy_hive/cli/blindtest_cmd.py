@@ -52,5 +52,5 @@ def run_blindtest(name: str, workdir: str, config: dict, n: int) -> None:
         if aborted:
             break
 
-    summary = rate_pairs(pairs, ["agent接话"] * len(pairs), ratings)
+    summary = rate_pairs(pairs, ratings)
     typer.echo(f"\n盲测完成：共 {summary['count']} 条，平均分 {summary['average']}/5")

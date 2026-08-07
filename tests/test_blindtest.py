@@ -46,7 +46,7 @@ def test_extract_pairs_empty_messages_returns_empty():
 def test_rate_pairs_summary():
     pairs = [{"real_reply": "a"}, {"real_reply": "b"}]
     ratings = {0: 4, 1: 5}
-    summary = rate_pairs(pairs, ["接话1", "接话2"], ratings)
+    summary = rate_pairs(pairs, ratings)
     assert summary["count"] == 2
     assert summary["average"] == 4.5
 

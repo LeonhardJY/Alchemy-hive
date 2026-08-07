@@ -13,6 +13,7 @@ MODEL_CONFIG = {"base_url": "http://x", "api_key": "k", "model": "m"}
 def mock_llm(monkeypatch):
     """mock alchemy_hive.core.llm.httpx.post，返回假 OpenAI 响应，绕过真实网络。
 
+    两阶段：analyze(json_mode) 返回分析 JSON，build(非 json_mode) 返回 persona Markdown。
     返回捕获到的请求 kwargs（url/headers/json），供测试断言样本发往所配端点。
     """
 
@@ -21,19 +22,23 @@ def mock_llm(monkeypatch):
     def fake_post(*a, **k):
         captured.update(k)
         captured["url"] = a[0]
-        payload = {
-            "display_name": "小明",
-            "relationship": "好朋友",
-            "expression_rules": ["一次只说一句话"],
-            "system_prompt": "你是小明。",
-        }
+        body = k.get("json") or {}
+        if body.get("response_format"):
+            content = json.dumps({
+                "display_name": "小明",
+                "relationship": "好朋友",
+                "expression_rules": ["一次只说一句话"],
+                "memories": [{"slug": "core", "body": "一起在食堂研究菜单"}],
+            }, ensure_ascii=False)
+        else:
+            content = "你是小明。\n一次只说一句话。"
         return type(
             "R",
             (),
             {
                 "raise_for_status": lambda self: None,
                 "json": lambda self: {
-                    "choices": [{"message": {"content": json.dumps(payload, ensure_ascii=False)}}]
+                    "choices": [{"message": {"content": content}}]
                 },
             },
         )()

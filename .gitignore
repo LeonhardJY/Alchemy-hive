@@ -6,4 +6,5 @@ build/
 *.egg-info/
 .pytest_cache/
 .alchemy-hive/
+.claude/
 .superpowers/

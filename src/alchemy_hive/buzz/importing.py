@@ -1,14 +1,21 @@
-"""把导出产物送到 buzz 桌面端：打开导出文件夹 + 复制文件完整路径到剪贴板。
+"""把导出产物送到 buzz：一键导入 + 高容错。
 
-buzz 桌面端（Tauri）目前只开放 UI 导入（My Agents → 导入 / 拖入窗口），
-没有命令行或文件关联导入接口；buzz-cli 面向自建 relay 且需私钥，非桌面路径。
-本模块把"找文件 + 复制路径"压成一步，并尽力触发默认打开。
+傻瓜用户会犯的错，全部兜住：
+- 忘了蒸馏/没有成品 → 友好提示"先开始蒸馏"，不报错
+- 名称输错或没填 → 自动导入全部成品，并说明
+- 剪贴板/打开文件夹失败 → 提示手动路径
+- buzz-cli 直连建号缺配置 → 说明缺什么，仍用"打开文件夹+复制路径"主路径
 """
+import json as _json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 from ..core.safe import safe_filename
+
+# buzz-cli draft-create 的 system_prompt 上限（agent_management.rs: MAX_PROMPT_CHARS=20000）
+_MAX_PROMPT = 19000
 
 
 def _copy_to_clipboard(text: str) -> bool:
@@ -35,23 +42,246 @@ def _open_folder(path: Path) -> bool:
         return False
 
 
-def import_to_buzz(name: str, workdir: str = "build") -> list[str]:
-    """打开导出文件夹 + 复制 .agent.json 完整路径，返回步骤日志。"""
+def _list_exports(export_dir: Path) -> list[Path]:
+    return sorted(export_dir.glob("*.agent.json")) if export_dir.exists() else []
+
+
+def _display_name(agent_file: Path) -> str:
+    """从文件名取人物名：'小明.agent.json' → '小明'（不能只 .stem，会剩 '.agent'）。"""
+    name = agent_file.name
+    return name[: -len(".agent.json")] if name.endswith(".agent.json") else agent_file.stem
+
+
+def _system_prompt_of(agent_file: Path) -> str:
+    """从 .agent.json 取 definition.systemPrompt 作为建号指令；损坏时退回文件原文。"""
+    try:
+        snap = _json.loads(agent_file.read_text(encoding="utf-8"))
+        prompt = (snap.get("definition") or {}).get("systemPrompt") or ""
+        if prompt:
+            return prompt[: _MAX_PROMPT]
+    except Exception:
+        pass
+    try:
+        return agent_file.read_text(encoding="utf-8")[: _MAX_PROMPT]
+    except Exception:
+        return ""
+
+
+def _find_buzz_cli() -> str | None:
+    """定位 buzz-cli：优先 PATH；否则找桌面端自带二进制（Windows: %LOCALAPPDATA%/Buzz/buzz.exe）。"""
+    found = shutil.which("buzz")
+    if found:
+        return found
+    candidates: list[Path] = []
+    if os.name == "nt":
+        candidates.append(Path(os.environ.get("LOCALAPPDATA", "")) / "Buzz" / "buzz.exe")
+        candidates.append(Path(os.environ.get("PROGRAMFILES", "C:/Program Files")) / "Buzz" / "buzz.exe")
+    else:
+        candidates += [
+            Path("/Applications/Buzz.app/Contents/MacOS/buzz"),
+            Path("/usr/local/bin/buzz"),
+            Path("/opt/buzz/buzz"),
+        ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return None
+
+
+def _detect_desktop_relay() -> str | None:
+    """从 buzz 桌面端配置里找它实际用的 relay（本地 localhost 或云端 wss），供 buzz-cli 复用。"""
+    import re
+    paths: list[Path] = []
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA", "")) / "xyz.block.buzz.app" / "agents"
+        paths += [base / "managed-agents.json", base / "global-agent-config.json"]
+    for p in paths:
+        try:
+            urls = re.findall(r"wss?://[a-zA-Z0-9._:\-/]+", p.read_text(encoding="utf-8", errors="ignore"))
+            if urls:
+                return urls[0]
+        except Exception:
+            continue
+    return None
+
+
+def _try_draft_create(display_name: str, agent_file: Path, channel: str | None, relay_url: str | None = None) -> list[str]:
+    """高级直连：buzz-cli 在 relay 上建号。缺任一配置即友好跳过，不报错。"""
+    if not channel:
+        return ["[buzz] 提示：未提供 --channel（高级直连建号需要它），跳过；用「打开文件夹+复制路径」即可。"]
+    buzz = _find_buzz_cli()
+    if not buzz:
+        return ["[buzz] 提示：未检测到 buzz-cli（命令行 `buzz`），跳过直连建号；用「打开文件夹+复制路径」即可。"]
+    if not os.environ.get("BUZZ_PRIVATE_KEY"):
+        return ["[buzz] 提示：未设置 BUZZ_PRIVATE_KEY，跳过直连建号；桌面端用「打开文件夹+复制路径」导入即可。"]
+    cmd = [buzz]
+    if relay_url:
+        cmd += ["--relay", relay_url]  # buzz-cli 全局参数
+    cmd += ["agents", "draft-create",
+            "--channel", channel,
+            "--display-name", display_name,
+            "--system-prompt", "-"]  # 指令走 stdin
+    try:
+        r = subprocess.run(cmd, input=_system_prompt_of(agent_file).encode("utf-8"),
+                           capture_output=True, timeout=60)
+        if r.returncode == 0:
+            return [f"[buzz] ✓ 已通过 buzz-cli 创建 agent 草稿：{display_name}（channel {channel}）"]
+        err = (r.stderr or r.stdout).decode("utf-8", "replace").strip()[:200]
+        return [f"[buzz] buzz-cli 创建失败（exit {r.returncode}）：{err}"]
+    except Exception as e:
+        return [f"[buzz] buzz-cli 调用失败：{e}"]
+
+
+def _load_buzz_config(config_path: str = ".alchemy-hive/config.toml") -> dict:
+    """读配置里的 [buzz] 段：channel / relay_url（buzz-import 的自动直连参数）。"""
+    from ..core.distill import load_config
+    buzz = (load_config(config_path) or {}).get("buzz") or {}
+    return {
+        "channel": (buzz.get("channel") or "").strip() or None,
+        "relay_url": (buzz.get("relay_url") or "").strip() or None,
+    }
+
+
+def _save_buzz_channel(config_path: str, channel: str, relay_url: str | None = None) -> None:
+    """把 [buzz] channel（+可选 relay_url）写进配置文件（文本级替换 [buzz] 段）。"""
+    p = Path(config_path)
+    text = p.read_text(encoding="utf-8") if p.exists() else ""
+    out: list[str] = []
+    in_buzz = False
+    for ln in text.splitlines():
+        if ln.strip().startswith("[buzz]"):
+            in_buzz = True
+            continue
+        if in_buzz:
+            if ln.strip().startswith("["):
+                in_buzz = False
+                out.append(ln)
+            continue
+        out.append(ln)
+    out.append("")
+    out.append("[buzz]")
+    out.append(f'channel = "{channel}"')
+    if relay_url:
+        out.append(f'relay_url = "{relay_url}"')
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(out) + "\n", encoding="utf-8")
+
+
+def import_to_buzz(name: str = "", workdir: str = "build", channel: str | None = None, relay_url: str | None = None) -> list[str]:
+    """一键导入到 buzz：自动解析成品 → 打开文件夹 + 复制路径 → 可选 buzz-cli 直连建号。
+
+    name 为空或找不到时，自动导入 build/export/ 下全部 .agent.json（高容错，适配社群场景）。
+    任何"用户可犯的错"都返回易懂提示，不抛异常。
+    """
     logs: list[str] = []
     export_dir = Path(workdir) / "export"
-    safe = safe_filename(name)
-    agent_file = export_dir / f"{safe}.agent.json"
-    if not agent_file.exists():
-        raise FileNotFoundError(f"未找到导出文件 {agent_file}，请先运行 export")
 
-    logs.append(f"[buzz] 导出文件：{agent_file}")
+    # 1. 解析要导入的成品
+    if not export_dir.exists():
+        return [
+            "[buzz] 还没有成品文件夹 build/export，说明还没蒸馏过。",
+            "[buzz] 请先在上面点「开始蒸馏」，成功后这里就会生成 .agent.json。",
+        ]
+    all_files = _list_exports(export_dir)
+    if not all_files:
+        return [
+            "[buzz] 导出文件夹 build/export 是空的，还没有成品。",
+            "[buzz] 请先「开始蒸馏」生成人物，再回来点这个按钮。",
+        ]
+
+    exact = export_dir / f"{safe_filename(name)}.agent.json" if name else None
+    if exact and exact.exists():
+        targets = [exact]
+    elif name:
+        logs.append(f"[buzz] 没找到「{name}」的成品文件，但检测到 {len(all_files)} 个，已全部帮你导入。")
+        logs.append("[buzz] 想只导某一个？把名称栏填成对应名字再点一次即可。")
+        targets = all_files
+    else:
+        logs.append(f"[buzz] 未填名称，检测到 {len(all_files)} 个成品，已全部帮你导入（适配多人物社群）。")
+        targets = all_files
+
+    # 2. 打开文件夹（一次）+ 复制路径
     if _open_folder(export_dir):
         logs.append(f"[buzz] 已打开导出文件夹：{export_dir}")
     else:
-        logs.append(f"[buzz] 无法自动打开文件夹，请手动前往 {export_dir}")
+        logs.append(f"[buzz] 未能自动打开文件夹，请手动前往：{export_dir}")
+    if _copy_to_clipboard("\n".join(str(f.resolve()) for f in targets)):
+        logs.append(f"[buzz] 已把 {len(targets)} 个 .agent.json 的完整路径复制到剪贴板。")
+    else:
+        logs.append("[buzz] 剪贴板复制失败，请手动复制上面的路径。")
 
-    if _copy_to_clipboard(str(agent_file.resolve())):
-        logs.append("[buzz] 文件完整路径已复制到剪贴板")
-    logs.append("[buzz] 在 buzz 桌面端 My Agents → 导入：粘贴路径，或把文件拖入窗口。")
-    logs.append("[buzz] 提示：buzz 桌面端暂未开放命令行导入接口，此操作已把导入步骤压缩到最短。")
+    # 3. 导入引导 + 社群说明
+    logs.append("[buzz] 导入：打开 buzz 桌面端 → My Agents → 导入 → 粘贴路径（或把文件拖进窗口）。")
+    logs.append(f"[buzz] 共 {len(targets)} 个 agent；把多个拉进同一频道就是一个社群，想建几个建几个。")
+
+    # 4. 可选 buzz-cli 直连建号
+    for t in targets:
+        logs.extend(_try_draft_create(_display_name(t), t, channel, relay_url))
     return logs
+
+
+def buzz_setup(config_path: str = ".alchemy-hive/config.toml", channel: str | None = None,
+               relay_url: str | None = None) -> list[str]:
+    """开发者引导：检查 buzz-cli / 密钥 / relay，配置直连建号，并把 channel 存进 [buzz] 配置。
+
+    每一步缺失都给"傻瓜也能照做"的指引；全部就绪后可 `alchemy-hive buzz-import` 免填直连。
+    """
+    lines: list[str] = []
+    buzz = _find_buzz_cli()
+    if not buzz:
+        return [
+            "✗ 未找到 buzz-cli（命令行 `buzz`）。",
+            "  安装（需 Rust 工具链）：cd <buzz 源码目录>/crates/buzz-cli && cargo install --path .",
+            "  或去 https://github.com/block/buzz 的 Releases 下载 buzz-cli 预编译二进制。",
+            "  装好后重新运行：alchemy-hive buzz-setup",
+        ]
+    lines.append(f"✓ buzz-cli：{buzz}")
+
+    if not relay_url:
+        relay_url = _detect_desktop_relay()
+    if relay_url:
+        lines.append(f"✓ 检测到桌面端 relay：{relay_url}")
+
+    if not os.environ.get("BUZZ_PRIVATE_KEY"):
+        hint = (
+            f"  桌面端身份私钥存于系统钥匙串，无法被 buzz-cli 读取；要直连建号需额外设置一把："
+            f"生成（nostr-tool generate / nostril）→ set BUZZ_PRIVATE_KEY=nsec1..."
+        )
+        return lines + [
+            "✗ 未设置 BUZZ_PRIVATE_KEY（Nostr 私钥，nsec1... 或 64 位 hex），buzz-cli 用它当身份。",
+            hint,
+            "  注意：用独立身份建号后，agent 属于该身份，桌面端能否看到取决于它是否使用同一身份；",
+            "  若只想把文件弄进桌面端，直接用「打开文件夹+复制路径」主路径即可。",
+        ]
+    lines.append("✓ BUZZ_PRIVATE_KEY：已设置")
+
+    base = [buzz] + (["--relay", relay_url] if relay_url else [])
+    try:
+        r = subprocess.run(base + ["channels", "list"], capture_output=True, text=True, timeout=25)
+    except Exception as e:
+        return lines + [f"✗ 调用 buzz channels list 失败：{e}", "  请确认 buzz 桌面端/relay 正在运行。"]
+    if r.returncode != 0:
+        return lines + [
+            f"✗ 连接 relay 失败（exit {r.returncode}）：{(r.stderr or r.stdout).strip()[:200]}",
+            f"  检测到的 relay 是 {relay_url or 'http://localhost:3000'}；可用 --relay 或 BUZZ_RELAY_URL 覆盖。",
+        ]
+    try:
+        data = _json.loads(r.stdout)
+        channels = data if isinstance(data, list) else data.get("channels", data.get("data", []))
+        lines.append(f"✓ relay 连通，检测到 {len(channels)} 个频道：")
+        for c in channels[:20]:
+            cid = c.get("id") or c.get("channel_id") or c.get("uuid") or "?"
+            cname = c.get("name") or c.get("title") or cid
+            lines.append(f"    - {cname}  ({cid})")
+    except Exception:
+        lines.append("✓ relay 连通，频道列表：")
+        lines.append("    " + (r.stdout or "").strip()[:400])
+
+    if channel:
+        _save_buzz_channel(config_path, channel, relay_url)
+        lines.append(f"✓ 已把 channel={channel} 存进 {config_path} 的 [buzz] 段，之后 buzz-import 免填直连。")
+    else:
+        lines.append("下一步：记下要用的频道 UUID，然后：")
+        lines.append("  alchemy-hive buzz-import --name 人物名 --channel <UUID>   # 单次直连")
+        lines.append("  alchemy-hive buzz-setup --channel <UUID>                # 存进配置，之后免填")
+    return lines

@@ -115,18 +115,22 @@ def test_full_pipeline_path_traversal_safe(tmp_path, monkeypatch):
     from alchemy_hive.cli.app import app
 
     def fake_post(*a, **k):
-        payload = {
-            "display_name": "小明",
-            "relationship": "好朋友",
-            "expression_rules": ["一次只说一句话"],
-            "system_prompt": "你是小明。",
-        }
+        body = k.get("json") or {}
+        if body.get("response_format"):
+            payload = {
+                "display_name": "小明",
+                "relationship": "好朋友",
+                "expression_rules": ["一次只说一句话"],
+            }
+            content = _json.dumps(payload, ensure_ascii=False)
+        else:
+            content = "你是小明。\n一次只说一句话。"
         return type(
             "R",
             (),
             {
                 "raise_for_status": lambda self: None,
-                "json": lambda self: {"choices": [{"message": {"content": _json.dumps(payload, ensure_ascii=False)}}]},
+                "json": lambda self: {"choices": [{"message": {"content": content}}]},
             },
         )()
 
