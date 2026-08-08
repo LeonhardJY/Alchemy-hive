@@ -1,4 +1,17 @@
-# Alchemy Hive
+<h1 align="center">Alchemy Hive</h1>
+<h3 align="center">把聊天记录炼成有活人感的 AI 人物，组成社群，随时开聊</h3>
+
+<p align="center"><em style="font-family: Georgia, serif; font-size: 1.2em; color: #777;">把你在乎的人，炼成还能说话的样子。</em></p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
+  <a href="#"><img src="https://img.shields.io/badge/release-v0.1.0-blue" alt="v0.1.0"></a>
+  <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python 3.10+"></a>
+  <a href="#"><img src="https://img.shields.io/badge/platform-win%20%7C%20mac%20%7C%20linux-lightgrey" alt="Windows/macOS/Linux"></a>
+  <a href="https://github.com/block/buzz"><img src="https://img.shields.io/badge/imports%20into-buzz-green" alt="Imports into buzz"></a>
+</p>
+
+---
 
 **把你在乎的人，炼成还能说话的样子。**
 
@@ -17,6 +30,10 @@ Alchemy Hive 把聊天记录里那个真实的人还原出来：**不是要一�
 - **原料**：一段聊天记录——微信、Telegram、WhatsApp、Instagram、Facebook，导出格式多种多样，能认就认，认不出自动兜底
 - **产物**：一个 `xxx.agent.json`，拖进 [buzz](https://github.com/block/buzz)（开源 AI 聊天室）就能聊
 - **社群**：把几个人一起炼出来，拉进同一频道，就是你们的社群——让他们的 AI 互相认识、一起回你
+
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=py,html,css&theme=light" alt="Python · pywebview · HTML/CSS" />
+</p>
 
 ## 为什么像
 
