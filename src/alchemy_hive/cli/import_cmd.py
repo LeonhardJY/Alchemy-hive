@@ -8,8 +8,9 @@ from ..core.parser import parse_messages
 from ..core.safe import safe_filename
 
 
-def import_chat(input_path: str, name: str, out_dir: str) -> None:
-    msgs = parse_messages(input_path)
+def import_chat(input_path: str, name: str, out_dir: str, self_aliases: str = "", source: str = "auto") -> None:
+    aliases = [a.strip() for a in self_aliases.split(",") if a.strip()] or None
+    msgs = parse_messages(input_path, self_aliases=aliases, source=source)
     if not msgs:
         typer.echo("[警告] 解析出 0 条消息，请确认文件是 WeFlow 导出的 JSON 或微信导出的 txt（时间戳+发送者行）", err=True)
     Path(out_dir).mkdir(parents=True, exist_ok=True)

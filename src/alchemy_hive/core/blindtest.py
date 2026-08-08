@@ -2,8 +2,7 @@
 from .models import Message
 from .distill import DistillError
 from .llm import chat_completion, LLMError
-
-_SELF_ALIASES = ("我", "self", "me")
+from .parser import _SELF_ALIASES
 
 
 def extract_pairs(messages: list[Message], n: int, context_len: int = 3) -> list[dict]:

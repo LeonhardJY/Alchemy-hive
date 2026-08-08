@@ -7,4 +7,9 @@ build/
 .pytest_cache/
 .alchemy-hive/
 .claude/
-.superpowers/
+.DS_Store
+*.log
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/

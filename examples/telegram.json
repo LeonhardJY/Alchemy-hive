@@ -1,0 +1,11 @@
+{
+  "name": "小明",
+  "type": "personal_chat",
+  "id": 1,
+  "messages": [
+    {"id": 1, "type": "message", "date": "2023-07-24T09:29:09", "from": "小明", "text": "晚上一起吃饭？"},
+    {"id": 2, "type": "message", "date": "2023-07-24T09:31:53", "from": "我", "text": "好，老地方见"},
+    {"id": 3, "type": "service", "date": "2023-07-24T09:32:00", "from": null, "text": ""},
+    {"id": 4, "type": "message", "date": "2023-07-24T09:32:15", "from": "小明", "text": ["好，", {"type": "bold", "text": "楼下"}, "见"]}
+  ]
+}

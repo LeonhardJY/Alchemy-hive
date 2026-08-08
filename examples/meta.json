@@ -1,0 +1,9 @@
+{
+  "participants": [{"name": "小明"}, {"name": "Alice"}],
+  "messages": [
+    {"sender_name": "小明", "timestamp_ms": 1690252335000, "content": "好，老地方见", "type": "Generic"},
+    {"sender_name": "小明", "timestamp_ms": 1690252330000, "content": "晚上一起吃饭？", "type": "Generic"},
+    {"sender_name": "Alice", "timestamp_ms": 1690252320000, "content": "在吗", "type": "Generic"},
+    {"sender_name": "小明", "timestamp_ms": 1690252340000, "type": "Share"}
+  ]
+}

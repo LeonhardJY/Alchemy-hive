@@ -17,6 +17,56 @@ from ..core.safe import safe_filename
 # buzz-cli draft-create 的 system_prompt 上限（agent_management.rs: MAX_PROMPT_CHARS=20000）
 _MAX_PROMPT = 19000
 
+# 导入流程文案（GUI 按语言输出；默认中文与历史一致，测试锁定）
+_L = {
+    "zh": {
+        "no_build_1": "[buzz] 还没有成品文件夹 build/export，说明还没蒸馏过。",
+        "no_build_2": "[buzz] 请先在上面点「开始蒸馏」，成功后这里就会生成 .agent.json。",
+        "no_export_1": "[buzz] 导出文件夹 build/export 是空的，还没有成品。",
+        "no_export_2": "[buzz] 请先「开始蒸馏」生成人物，再回来点这个按钮。",
+        "not_found_fmt": "[buzz] 没找到「{name}」的成品文件，但检测到 {n} 个，已全部帮你导入。",
+        "not_found_hint": "[buzz] 想只导某一个？把名称栏填成对应名字再点一次即可。",
+        "all_imported_fmt": "[buzz] 未填名称，检测到 {n} 个成品，已全部帮你导入（适配多人物社群）。",
+        "opened_fmt": "[buzz] 已打开导出文件夹：{dir}",
+        "open_fail_fmt": "[buzz] 未能自动打开文件夹，请手动前往：{dir}",
+        "copied_fmt": "[buzz] 已把 {n} 个 .agent.json 的完整路径复制到剪贴板。",
+        "copy_fail": "[buzz] 剪贴板复制失败，请手动复制上面的路径。",
+        "guide_import": "[buzz] 导入：打开 buzz 桌面端 → My Agents → 导入 → 粘贴路径（或把文件拖进窗口）。",
+        "guide_count_fmt": "[buzz] 共 {n} 个 agent；把多个拉进同一频道就是一个社群，想建几个建几个。",
+        "draft_no_channel": "[buzz] 提示：未提供 --channel（高级直连建号需要它），跳过；用「打开文件夹+复制路径」即可。",
+        "draft_no_cli": "[buzz] 提示：未检测到 buzz-cli（命令行 `buzz`），跳过直连建号；用「打开文件夹+复制路径」即可。",
+        "draft_no_key": "[buzz] 提示：未设置 BUZZ_PRIVATE_KEY，跳过直连建号；桌面端用「打开文件夹+复制路径」导入即可。",
+        "draft_ok_fmt": "[buzz] ✓ 已通过 buzz-cli 创建 agent 草稿：{name}（channel {channel}）",
+        "draft_fail_fmt": "[buzz] buzz-cli 创建失败（exit {code}）：{err}",
+        "draft_call_fail_fmt": "[buzz] buzz-cli 调用失败：{err}",
+    },
+    "en": {
+        "no_build_1": "[buzz] No build/export folder yet — you haven't distilled anything.",
+        "no_build_2": "[buzz] Click “Start distillation” above; the .agent.json will appear here.",
+        "no_export_1": "[buzz] build/export is empty — no output yet.",
+        "no_export_2": "[buzz] Run a distillation first, then come back.",
+        "not_found_fmt": "[buzz] Couldn't find an output for “{name}”, but found {n} — imported them all for you.",
+        "not_found_hint": "[buzz] Want just one? Fill the name field and click again.",
+        "all_imported_fmt": "[buzz] No name given — found {n} outputs, imported them all (for multi-person communities).",
+        "opened_fmt": "[buzz] Opened export folder: {dir}",
+        "open_fail_fmt": "[buzz] Couldn't open the folder automatically — go to: {dir}",
+        "copied_fmt": "[buzz] Copied full paths of {n} .agent.json to clipboard.",
+        "copy_fail": "[buzz] Clipboard copy failed — copy the paths above manually.",
+        "guide_import": "[buzz] To import: open buzz desktop → My Agents → Import → paste the path (or drag the file in).",
+        "guide_count_fmt": "[buzz] {n} agent(s) total; drop them into one channel to build a community.",
+        "draft_no_channel": "[buzz] Note: no --channel given (needed for direct create) — skipped; use “open folder + copy path” instead.",
+        "draft_no_cli": "[buzz] Note: buzz-cli not found on PATH — skipped; use “open folder + copy path”.",
+        "draft_no_key": "[buzz] Note: BUZZ_PRIVATE_KEY not set — skipped; desktop import still works.",
+        "draft_ok_fmt": "[buzz] ✓ Created agent draft via buzz-cli: {name} (channel {channel})",
+        "draft_fail_fmt": "[buzz] buzz-cli create failed (exit {code}): {err}",
+        "draft_call_fail_fmt": "[buzz] buzz-cli call failed: {err}",
+    },
+}
+
+
+def _t(lang: str, key: str, **kw) -> str:
+    return _L.get(lang, _L["zh"])[key].format(**kw)
+
 
 def _copy_to_clipboard(text: str) -> bool:
     """Windows 剪贴板：优先 clip.exe（utf-16le），失败返回 False。"""
@@ -105,15 +155,15 @@ def _detect_desktop_relay() -> str | None:
     return None
 
 
-def _try_draft_create(display_name: str, agent_file: Path, channel: str | None, relay_url: str | None = None) -> list[str]:
+def _try_draft_create(display_name: str, agent_file: Path, channel: str | None, relay_url: str | None = None, lang: str = "zh") -> list[str]:
     """高级直连：buzz-cli 在 relay 上建号。缺任一配置即友好跳过，不报错。"""
     if not channel:
-        return ["[buzz] 提示：未提供 --channel（高级直连建号需要它），跳过；用「打开文件夹+复制路径」即可。"]
+        return [_t(lang, "draft_no_channel")]
     buzz = _find_buzz_cli()
     if not buzz:
-        return ["[buzz] 提示：未检测到 buzz-cli（命令行 `buzz`），跳过直连建号；用「打开文件夹+复制路径」即可。"]
+        return [_t(lang, "draft_no_cli")]
     if not os.environ.get("BUZZ_PRIVATE_KEY"):
-        return ["[buzz] 提示：未设置 BUZZ_PRIVATE_KEY，跳过直连建号；桌面端用「打开文件夹+复制路径」导入即可。"]
+        return [_t(lang, "draft_no_key")]
     cmd = [buzz]
     if relay_url:
         cmd += ["--relay", relay_url]  # buzz-cli 全局参数
@@ -125,11 +175,11 @@ def _try_draft_create(display_name: str, agent_file: Path, channel: str | None, 
         r = subprocess.run(cmd, input=_system_prompt_of(agent_file).encode("utf-8"),
                            capture_output=True, timeout=60)
         if r.returncode == 0:
-            return [f"[buzz] ✓ 已通过 buzz-cli 创建 agent 草稿：{display_name}（channel {channel}）"]
+            return [_t(lang, "draft_ok_fmt", name=display_name, channel=channel)]
         err = (r.stderr or r.stdout).decode("utf-8", "replace").strip()[:200]
-        return [f"[buzz] buzz-cli 创建失败（exit {r.returncode}）：{err}"]
+        return [_t(lang, "draft_fail_fmt", code=r.returncode, err=err)]
     except Exception as e:
-        return [f"[buzz] buzz-cli 调用失败：{e}"]
+        return [_t(lang, "draft_call_fail_fmt", err=e)]
 
 
 def _load_buzz_config(config_path: str = ".alchemy-hive/config.toml") -> dict:
@@ -167,7 +217,7 @@ def _save_buzz_channel(config_path: str, channel: str, relay_url: str | None = N
     p.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
-def import_to_buzz(name: str = "", workdir: str = "build", channel: str | None = None, relay_url: str | None = None) -> list[str]:
+def import_to_buzz(name: str = "", workdir: str = "build", channel: str | None = None, relay_url: str | None = None, lang: str = "zh") -> list[str]:
     """一键导入到 buzz：自动解析成品 → 打开文件夹 + 复制路径 → 可选 buzz-cli 直连建号。
 
     name 为空或找不到时，自动导入 build/export/ 下全部 .agent.json（高容错，适配社群场景）。
@@ -178,45 +228,39 @@ def import_to_buzz(name: str = "", workdir: str = "build", channel: str | None =
 
     # 1. 解析要导入的成品
     if not export_dir.exists():
-        return [
-            "[buzz] 还没有成品文件夹 build/export，说明还没蒸馏过。",
-            "[buzz] 请先在上面点「开始蒸馏」，成功后这里就会生成 .agent.json。",
-        ]
+        return [_t(lang, "no_build_1"), _t(lang, "no_build_2")]
     all_files = _list_exports(export_dir)
     if not all_files:
-        return [
-            "[buzz] 导出文件夹 build/export 是空的，还没有成品。",
-            "[buzz] 请先「开始蒸馏」生成人物，再回来点这个按钮。",
-        ]
+        return [_t(lang, "no_export_1"), _t(lang, "no_export_2")]
 
     exact = export_dir / f"{safe_filename(name)}.agent.json" if name else None
     if exact and exact.exists():
         targets = [exact]
     elif name:
-        logs.append(f"[buzz] 没找到「{name}」的成品文件，但检测到 {len(all_files)} 个，已全部帮你导入。")
-        logs.append("[buzz] 想只导某一个？把名称栏填成对应名字再点一次即可。")
+        logs.append(_t(lang, "not_found_fmt", name=name, n=len(all_files)))
+        logs.append(_t(lang, "not_found_hint"))
         targets = all_files
     else:
-        logs.append(f"[buzz] 未填名称，检测到 {len(all_files)} 个成品，已全部帮你导入（适配多人物社群）。")
+        logs.append(_t(lang, "all_imported_fmt", n=len(all_files)))
         targets = all_files
 
     # 2. 打开文件夹（一次）+ 复制路径
     if _open_folder(export_dir):
-        logs.append(f"[buzz] 已打开导出文件夹：{export_dir}")
+        logs.append(_t(lang, "opened_fmt", dir=export_dir))
     else:
-        logs.append(f"[buzz] 未能自动打开文件夹，请手动前往：{export_dir}")
+        logs.append(_t(lang, "open_fail_fmt", dir=export_dir))
     if _copy_to_clipboard("\n".join(str(f.resolve()) for f in targets)):
-        logs.append(f"[buzz] 已把 {len(targets)} 个 .agent.json 的完整路径复制到剪贴板。")
+        logs.append(_t(lang, "copied_fmt", n=len(targets)))
     else:
-        logs.append("[buzz] 剪贴板复制失败，请手动复制上面的路径。")
+        logs.append(_t(lang, "copy_fail"))
 
     # 3. 导入引导 + 社群说明
-    logs.append("[buzz] 导入：打开 buzz 桌面端 → My Agents → 导入 → 粘贴路径（或把文件拖进窗口）。")
-    logs.append(f"[buzz] 共 {len(targets)} 个 agent；把多个拉进同一频道就是一个社群，想建几个建几个。")
+    logs.append(_t(lang, "guide_import"))
+    logs.append(_t(lang, "guide_count_fmt", n=len(targets)))
 
     # 4. 可选 buzz-cli 直连建号
     for t in targets:
-        logs.extend(_try_draft_create(_display_name(t), t, channel, relay_url))
+        logs.extend(_try_draft_create(_display_name(t), t, channel, relay_url, lang=lang))
     return logs
 
 

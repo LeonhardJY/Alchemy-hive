@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from alchemy_hive.core.parser import parse_messages
+from alchemy_hive.core.parser import parse_messages, detect_source
 from alchemy_hive.core.models import Message
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
@@ -14,7 +14,7 @@ def test_parse_weflow_json():
     assert len(msgs) == 2
     assert all(isinstance(m, Message) for m in msgs)
     assert all(not m.content.startswith("[") for m in msgs)
-    assert any(m.content == "epic又要送了？" for m in msgs)
+    assert any(m.content == "晚上一起吃饭？" for m in msgs)
 
 
 def test_parse_wechat_txt():
@@ -241,3 +241,61 @@ def test_parse_empty_txt_returns_empty(tmp_path):
     f = tmp_path / "empty.txt"
     f.write_text("", encoding="utf-8")
     assert parse_messages(str(f)) == []
+
+
+def test_parse_self_aliases_normalizes_custom_name(tmp_path):
+    """--self 指定昵称后，发送者应归一化为『我』（无方向标记的通用 JSON）。"""
+    f = tmp_path / "self.json"
+    f.write_text(json.dumps([
+        {"sender": "Alice", "content": "在吗", "timestamp": "2023-01-01 00:00:00"},
+        {"sender": "Bob", "content": "在", "timestamp": "2023-01-01 00:00:01"},
+    ], ensure_ascii=False), encoding="utf-8")
+    msgs = parse_messages(str(f), self_aliases=["Alice"])
+    assert [m.sender for m in msgs] == ["我", "Bob"]
+
+
+def test_parse_generic_single_line_txt(tmp_path):
+    """无时间戳的『发送者: 内容』单行 txt（其他平台拷贝）→ 应解析，且 --self 生效。"""
+    f = tmp_path / "generic.txt"
+    f.write_text("Alice: 晚上好\nBob: 回见\n", encoding="utf-8")
+    msgs = parse_messages(str(f), self_aliases=["Alice"])
+    assert len(msgs) == 2
+    assert msgs[0].sender == "我"
+    assert msgs[0].content == "晚上好"
+    assert msgs[1].sender == "Bob"
+
+
+# ---- 多平台识别与解析 ----
+
+
+def test_detect_existing_examples():
+    assert detect_source(str(EXAMPLES_DIR / "chat.json")) == "weflow"
+    assert detect_source(str(EXAMPLES_DIR / "chat.txt")) == "wechat"
+
+
+def test_parse_telegram():
+    msgs = parse_messages(str(EXAMPLES_DIR / "telegram.json"))
+    assert detect_source(str(EXAMPLES_DIR / "telegram.json")) == "telegram"
+    assert len(msgs) == 3                     # 服务消息跳过
+    assert msgs[0].sender == "小明"
+    assert msgs[0].content == "晚上一起吃饭？"
+    assert msgs[0].timestamp == "2023-07-24 09:29:09"   # ISO → 统一格式
+    assert msgs[2].content == "好，楼下见"     # 实体数组拼接
+
+
+def test_parse_whatsapp():
+    msgs = parse_messages(str(EXAMPLES_DIR / "whatsapp.txt"), self_aliases=["Alice"])
+    assert detect_source(str(EXAMPLES_DIR / "whatsapp.txt")) == "whatsapp"
+    assert len(msgs) == 3                     # image.jpg 媒体行跳过
+    assert msgs[0].sender == "小明"
+    assert msgs[0].timestamp == "2023-07-24 09:29:09"   # MM/DD/YY AM/PM → 统一格式
+    assert msgs[1].sender == "我"              # --self Alice 归一化
+    assert msgs[2].content == "我给你看个东西\n就是这个"  # 续行接上
+
+
+def test_parse_meta_sorted_newest_first():
+    msgs = parse_messages(str(EXAMPLES_DIR / "meta.json"), self_aliases=["Alice"])
+    assert detect_source(str(EXAMPLES_DIR / "meta.json")) == "meta"
+    assert len(msgs) == 3                     # Share 类型（无内容）跳过
+    assert [m.sender for m in msgs] == ["我", "小明", "小明"]  # 按时间升序：在吗 → 晚上一起吃饭 → 好老地方见
+    assert msgs[0].content == "在吗"

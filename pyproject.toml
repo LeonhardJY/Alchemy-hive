@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "alchemy-hive"
 version = "0.1.0"
-description = "从 WeFlow 导出的微信聊天蒸馏人物 AI agent，一键导出 buzz .agent.json"
+description = "把微信/Telegram/WhatsApp/Instagram/Facebook 聊天记录蒸馏成有活人感的 AI 人物，一键导出 buzz .agent.json"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "LeonhardJY"}]
-keywords = ["wechat", "llm", "persona", "agent", "distill", "buzz"]
+keywords = ["wechat", "telegram", "whatsapp", "instagram", "persona", "llm", "agent", "distill", "buzz"]
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",

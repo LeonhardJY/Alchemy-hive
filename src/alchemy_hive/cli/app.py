@@ -48,12 +48,14 @@ def init_cmd(config_path: str = typer.Option(".alchemy-hive/config.toml", "--con
 
 @app.command("import")
 def import_cmd(
-    input_path: str = typer.Argument(..., help="WeFlow 导出 JSON 或微信 txt"),
+    input_path: str = typer.Argument(..., help="聊天记录：微信/Telegram/WhatsApp/Instagram/Facebook 等导出的 JSON 或 txt"),
     name: str = typer.Option(..., "--name", help="人物名"),
     out_dir: str = typer.Option("build/parsed", "--out-dir", help="解析产物目录"),
+    self_aliases: str = typer.Option("", "--self", help="你在对话里的昵称（逗号分隔，如 --self 张三；无方向标记的导出用）"),
+    source: str = typer.Option("auto", "--source", help="导出平台：auto/weflow/wechat/telegram/whatsapp/meta/generic（默认 auto 自动识别）"),
 ):
     """解析聊天记录 → 结构化消息。"""
-    _run_command(import_chat, input_path, name, out_dir)
+    _run_command(import_chat, input_path, name, out_dir, self_aliases, source)
 
 @app.command("distill")
 def distill_cmd(
@@ -133,10 +135,10 @@ def buzz_setup_cmd(
 
 
 @app.command("gui")
-def gui_cmd():
-    """启动桌面图形界面（pywebview 玻璃拟态）。"""
+def gui_cmd(lang: str = typer.Option("auto", "--lang", help="界面语言：auto/zh/en（默认 auto 自动检测系统语言）")):
+    """启动桌面图形界面（pywebview 玻璃拟态，中英双语）。"""
     from ..gui.webview_app import run_gui
-    run_gui()
+    run_gui(lang)
 
 def main() -> None:
     app()
