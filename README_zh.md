@@ -32,6 +32,12 @@
   → buzz-import / pack：导入 buzz / 多 agent 社群打包
 ```
 
+## 名字的含义
+
+**Alchemy（炼金术）**——点石成金。聊天记录是原料，蒸馏出的 persona 是成品：同一份材料，变成能对话的样子。
+
+**Hive（蜂巢）**——蜂群，也是 hive mind。一个 agent 是一只蜜蜂；几个一起拉进一个频道，就成了一窝蜂——会聊天、会记住、会一起回你的社群。
+
 ## 特点
 
 - **多平台导入**：采样文件前 64KB 自动识别 WeFlow JSON、微信 txt、Telegram JSON、WhatsApp txt、Instagram/Facebook（Meta 共用一套格式）；识别失败回退通用字段探测（content/sender/time 等常见别名）

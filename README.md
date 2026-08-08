@@ -32,6 +32,12 @@ chat file (WeChat / Telegram / WhatsApp / Instagram / Facebook / generic)
   → buzz-import / pack: import into buzz / multi-agent community packaging
 ```
 
+## About the name
+
+**Alchemy** — transmutation. Chat logs are the raw ore; the distilled persona is the finished metal. Same material, turned into something you can talk to.
+
+**Hive** — a beehive, a hive mind. One agent is a single bee; several pulled into one channel form a hive: agents that talk, remember, and answer together.
+
 ## Features
 
 - **Multi-platform import**: samples the first 64KB of the file to auto-detect WeFlow JSON, WeChat txt, Telegram JSON, WhatsApp txt, Instagram/Facebook (Meta — one shared format); falls back to generic field probing (`content`/`sender`/`time` and common aliases) when detection fails
