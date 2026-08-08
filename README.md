@@ -69,7 +69,7 @@ alchemy-hive distill --name Xiaoming --profile "INTJ sarcastic loyal" --fix "he 
 alchemy-hive export --name Xiaoming --with-memory
 ```
 
-How to export chat logs: see [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md).
+How to export chat logs: see [docs/WEFLOW_EXPORT_EN.md](docs/WEFLOW_EXPORT_EN.md).
 
 ## Input formats
 

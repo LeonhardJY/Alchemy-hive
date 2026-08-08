@@ -69,7 +69,7 @@ alchemy-hive distill --name 小明 --profile "INTJ 爱吐槽" --fix "他不会�
 alchemy-hive export --name 小明 --with-memory
 ```
 
-聊天记录导出方式见 [docs/WEFLOW_EXPORT.md](docs/WEFLOW_EXPORT.md)。
+聊天记录导出方式见 [docs/WEFLOW_EXPORT_ZH.md](docs/WEFLOW_EXPORT_ZH.md)。
 
 ## 输入格式
 
