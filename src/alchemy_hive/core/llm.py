@@ -1,6 +1,6 @@
 """OpenAI-compatible LLM 客户端：distill 与 blindtest 共用。
 
-统一负责：模型配置校验、请求组装、超时、对瞬时错误的有限重试、
+统一负责：模型配置校验、请求组装、超时、对瞬时错误（连接/5xx）的有限重试、
 JSON 模式（response_format）支持与兼容回退、非字符串响应归一化。
 """
 import time
@@ -40,8 +40,8 @@ def chat_completion(
 ) -> str:
     """调 OpenAI-compatible /chat/completions，返回首个 choice 的文本内容。
 
-    配置缺失立即抛 LLMError（不发请求）；对连接/超时/5xx 做有限重试；
-    4xx（认证/参数错误）与响应解析错误不重试，直接抛 LLMError。
+    配置缺失立即抛 LLMError（不发请求）；对连接错误/5xx 做有限重试，
+    超时立即抛（让用户尽快感知慢请求）；4xx（认证/参数错误）与响应解析错误不重试。
     json_mode 被供应商拒绝（400/422）时自动去掉 response_format 重试一次。
     max_tokens 为 None 时不发送（由模型决定输出上限），否则透传给请求。
     """

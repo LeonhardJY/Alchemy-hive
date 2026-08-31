@@ -2,7 +2,8 @@
 import json
 from pathlib import Path
 
-from ..core.distill import distill
+from ..core.distill import distill, load_config, resolve_config_path
+from ..core.models import PersonaDoc
 from ..core.parser import parse_messages
 from ..core.safe import safe_filename
 from ..buzz.snapshot import write_snapshot_json
@@ -13,7 +14,9 @@ _L = {
         "parsed": "[import] 解析 {n} 条消息",
         "parsed_written": "[import] 已写 parsed/{safe}.json",
         "calling": "[distill] 调用模型 {model} @ {url}/chat/completions",
+        "build_override": "[distill] 撰写阶段改用 [build] 模型：{model}",
         "profile": "[distill] 手动画像：{profile}",
+        "fix_applied": "[distill] 已应用纠正 #{n}：{fix}",
         "done": "[distill] 蒸馏完成",
         "persona_written": "[distill] 已写 persona/{safe}.md + .json",
         "memory_skipped": "[提醒] 已省略 {n} 条共同记忆（记忆为明文、含真实内容，默认不含；如需导出请勾选「导出共同记忆」）",
@@ -25,7 +28,9 @@ _L = {
         "parsed": "[import] Parsed {n} messages",
         "parsed_written": "[import] Wrote parsed/{safe}.json",
         "calling": "[distill] Calling {model} @ {url}/chat/completions",
+        "build_override": "[distill] Build stage uses [build] model: {model}",
         "profile": "[distill] Manual profile: {profile}",
+        "fix_applied": "[distill] Applied correction #{n}: {fix}",
         "done": "[distill] Distillation complete",
         "persona_written": "[distill] Wrote persona/{safe}.md + .json",
         "memory_skipped": "[Reminder] Skipped {n} shared memories (plaintext & personal — hidden by default; tick “Export memories” to include)",
@@ -51,6 +56,7 @@ def run_pipeline(
     self_name: str = "",
     source: str = "auto",
     lang: str = "zh",
+    fix: str = "",
 ) -> list[str]:
     """执行完整蒸馏管线，返回步骤日志。model_config 形如 {"base_url","api_key","model"}。
 
@@ -59,6 +65,7 @@ def run_pipeline(
     self_name：你在对话里的昵称（逗号分隔），用于把你自己归一化为『我』。
     source：导出平台（auto 自动识别，或 weflow/telegram/whatsapp/meta 等）。
     lang：日志语言（zh/en）。
+    fix：交互校正（叠加到已有 corrections；不填时复用上次蒸馏的画像与纠正历史）。
     """
     logs: list[str] = []
 
@@ -86,13 +93,38 @@ def run_pipeline(
         json.dump([m.model_dump() for m in msgs], fh, ensure_ascii=False, separators=(",", ":"))
     emit(_t(lang, "parsed_written", safe=safe))
 
-    cfg = {"model": model_config}
+    # GUI 填的模型配置优先；配置文件里的 [build] 段（更强撰写模型）在 GUI 同样生效（与 CLI 对等）
+    cfg: dict = {"model": model_config}
+    file_cfg = load_config(resolve_config_path())
+    build_seg = file_cfg.get("build") or {}
+    if build_seg.get("base_url") and build_seg.get("api_key") and build_seg.get("model"):
+        cfg["build"] = build_seg
     emit(
         _t(lang, "calling", model=model_config.get("model", "?"), url=model_config.get("base_url", "?"))
     )
-    if manual_profile:
-        emit(_t(lang, "profile", profile=manual_profile))
-    doc = distill(msgs, name, cfg, manual_profile=manual_profile)
+    if "build" in cfg:
+        emit(_t(lang, "build_override", model=build_seg.get("model", "?")))
+
+    # 交互校正（与 CLI distill 对等）：读已有 persona 的 corrections + manual_profile 并累积
+    persona_json = root / "persona" / f"{safe}.json"
+    corrections: list[str] = []
+    existing_manual = ""
+    if persona_json.exists():
+        try:
+            existing = PersonaDoc.model_validate(json.loads(persona_json.read_text(encoding="utf-8")))
+            corrections = list(existing.corrections or [])
+            existing_manual = existing.manual_profile or ""
+        except Exception:
+            pass
+    if fix:
+        corrections.append(fix)
+    manual = manual_profile or existing_manual
+
+    if manual:
+        emit(_t(lang, "profile", profile=manual))
+    if fix:
+        emit(_t(lang, "fix_applied", n=len(corrections), fix=fix))
+    doc = distill(msgs, name, cfg, manual_profile=manual, corrections=corrections)
     emit(_t(lang, "done"))
 
     persona_dir = root / "persona"

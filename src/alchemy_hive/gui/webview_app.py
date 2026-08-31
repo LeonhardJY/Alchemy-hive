@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -26,6 +27,19 @@ from ..buzz.importing import import_to_buzz
 # js_api 的整个对象图来生成 JS 桥接函数表，把 Window 挂在实例上会把递归拖入
 # window.native 的 .NET/COM 无障碍对象图 → RecursionError → 窗口无法加载。
 _GUI_WINDOW = None
+
+
+def _gui_workdir() -> Path:
+    """GUI 工作目录固定在用户主目录下：无论从哪个目录/快捷方式启动，
+    产物与拖拽落盘都在同一处，不随 CWD 漂移（CLI 仍默认用 CWD 的 build/）。"""
+    return Path.home() / ".alchemy-hive" / "build"
+
+
+# 窗口标题（按语言）：启动与运行时切语言共用
+_GUI_TITLES = {
+    "zh": "Alchemy Hive · 把微信聊天蒸馏成 AI 朋友",
+    "en": "Alchemy Hive · Distill chats into AI friends",
+}
 
 # 英文界面：静态 HTML 文案的整句替换表（中文模板保持不变，仅 en 构建时应用）
 _EN_HTML = {
@@ -56,6 +70,8 @@ _EN_HTML = {
         "Your nickname (optional): your name in this chat, to tell who is you",
     "性格画像（可选，最高优先级）如：INTJ 摩羯座 爱吐槽 重感情":
         "Personality profile (optional, highest priority) e.g. INTJ Capricorn sarcastic loyal",
+    "纠正（可选）：对上次蒸馏不满意时填，如：他不会冷淡，他其实很细心":
+        "Correction (optional): if the last result felt off, e.g. he's not cold — he's actually attentive",
     "自定义模型（手动填写地址和模型名）": "Custom model (fill in URL and model name)",
     "DeepSeek（深度求索）": "DeepSeek",
     "通义千问（阿里云）": "Qwen (Alibaba)",
@@ -95,6 +111,8 @@ _EN_HTML = {
     "通义千问": "Qwen",
     "豆包": "Doubao",
     "腾讯混元": "Tencent Hunyuan",
+    # API key 明文切换按钮（静态初值；运行时由 JS 按 T.show_key/hide_key 更新）
+    "显示": "Show",
 }
 
 # JS 运行时文案（动态消息，需按语言拼接/占位）
@@ -116,6 +134,8 @@ _T = {
         "error_prefix": "错误: ",
         "export_re": "已生成 (?:-> )?(.+)",
         "warn_marker": "提醒",
+        "show_key": "显示",
+        "hide_key": "隐藏",
     },
     "en": {
         "self_required": "Your nickname (required): this export has no direction — needed to tell who is you",
@@ -134,6 +154,8 @@ _T = {
         "error_prefix": "Error: ",
         "export_re": "Generated (?:-> )?(.+)",
         "warn_marker": "Reminder",
+        "show_key": "Show",
+        "hide_key": "Hide",
     },
 }
 
@@ -163,16 +185,21 @@ def _detect_lang() -> str:
     """按系统 locale 猜界面语言：中文系统 → zh，其他 → en。"""
     import locale
     try:
-        code = (locale.getdefaultlocale() or ("", ""))[0] or ""
+        # getdefaultlocale() 在 Python 3.11 废弃、3.15 删除；优先用 getlocale()
+        _get = getattr(locale, "getlocale", None)
+        code = (_get() or ("", ""))[0] if _get else ""
+        if not code:
+            code = (locale.getdefaultlocale() or ("", ""))[0] or ""
     except Exception:
         code = os.environ.get("LANG", "")
     return "zh" if code.lower().startswith("zh") else "en"
 
 
-def _build_html(lang: str) -> str:
+def _build_html(lang: str, state_json: str = "") -> str:
     """按语言构建界面 HTML。中文直接用原始模板；英文做整句替换 + 注入 JS 文案。
 
     替换按 key 长度降序执行：避免「导入buzz」这类短词先被替换、破坏含它的整句匹配。
+    state_json：切语言前 JS 采集的表单状态（合法 JSON 对象才注入，页面加载后恢复）。
     """
     html = _HTML
     if lang == "en":
@@ -180,6 +207,14 @@ def _build_html(lang: str) -> str:
             html = html.replace(zh, _EN_HTML[zh])
     t = json.dumps(_T.get(lang, _T["zh"]), ensure_ascii=False)
     html = html.replace("/*__T__*/", f"window.T = {t};")
+    state = "null"
+    if state_json.startswith("{"):
+        try:
+            json.loads(state_json)  # 非法 JSON 不注入，避免拼出坏 JS
+            state = state_json
+        except Exception:
+            pass
+    html = html.replace("/*__STATE__*/", f"window.__S = {state};")
     html = html.replace("__ZH_SEL__", " selected" if lang == "zh" else "")
     html = html.replace("__EN_SEL__", " selected" if lang == "en" else "")
     html = html.replace("__LANG_LABEL__", "语言" if lang == "zh" else "Language")
@@ -281,16 +316,24 @@ _HTML = """<!DOCTYPE html>
   .step.done .step-label { color: var(--ok); }
   .step-sep { width: 34px; height: 3px; border-radius: 2px; background: var(--dark); opacity: .22; margin: 0 12px; transform: translateY(-9px); }
 
-  /* 卡片：凸起 */
+  /* 卡片：凸起 + 入场淡入 */
   .card {
     background: var(--bg-elem);
     border-radius: var(--radius-card);
     box-shadow: 10px 10px 20px var(--dark), -10px -10px 20px var(--light);
     padding: 20px 22px;
     margin-bottom: 18px;
+    animation: fadeUp .45s ease both;
   }
-  .card .label { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .card:nth-of-type(2) { animation-delay: .06s; }
+  .card:nth-of-type(3) { animation-delay: .12s; }
+  .log-wrap { animation: fadeUp .45s ease .1s both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .card .label { font-size: 12px; color: var(--muted); margin-bottom: 12px; font-weight: 600; }
+  .lb-num { display: inline-flex; align-items: center; justify-content: center; width: 19px; height: 19px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; margin-right: 8px; vertical-align: 1px; }
   .row { display: flex; gap: 10px; }
+  .key-row { display: flex; gap: 10px; }
+  .key-toggle { flex-shrink: 0; padding: 0 14px; font-size: 12px; color: var(--muted); letter-spacing: 1px; }
 
   /* 输入框/下拉：凹陷，文字清晰 */
   .field {
@@ -394,7 +437,7 @@ _HTML = """<!DOCTYPE html>
   }
   .btn-pulse { animation: pulse 1.1s 2; }
 
-  /* 日志：突出显示面板（凹陷 + 大字号 + 深字） */
+  /* 日志：突出显示面板（凹陷 + 大字号 + 深字）；内容可选中复制 */
   .log-wrap { margin-top: 2px; }
   .log-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .log {
@@ -408,7 +451,12 @@ _HTML = """<!DOCTYPE html>
     font-size: 13px;
     line-height: 1.9;
     font-family: Consolas, "Microsoft YaHei UI", monospace;
+    user-select: text;
+    cursor: text;
   }
+  .log::-webkit-scrollbar { width: 8px; }
+  .log::-webkit-scrollbar-thumb { background: var(--dark); border-radius: 4px; }
+  .log::-webkit-scrollbar-track { background: transparent; }
   .log .info { color: var(--accent); }
   .log .ok { color: var(--ok); }
   .log .warn { color: var(--warn); }
@@ -443,7 +491,7 @@ _HTML = """<!DOCTYPE html>
   </div>
 
   <div class="card">
-    <div class="label">原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来</div>
+    <div class="label"><span class="lb-num">1</span>原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来</div>
     <select class="field" id="source" style="margin-bottom:12px;" onchange="onSource()">
       <option value="auto" selected>自动识别（推荐）</option>
       <option value="weflow">微信（WeFlow 导出）</option>
@@ -465,12 +513,14 @@ _HTML = """<!DOCTYPE html>
   </div>
 
   <div class="card">
-    <div class="label">蒸馏人物 · 性格画像与模型（画像越具体越像 TA）</div>
+    <div class="label"><span class="lb-num">2</span>蒸馏人物 · 性格画像与模型（画像越具体越像 TA）</div>
     <input class="field" id="name" placeholder="Ta 的名称（如：小明）">
     <div class="spacer"></div>
     <input class="field" id="self_name" placeholder="你的昵称（可选）：对话里你的名字，用于区分方向（如：我 / 张三）">
     <div class="spacer"></div>
     <input class="field" id="profile" placeholder="性格画像（可选，最高优先级）如：INTJ 摩羯座 爱吐槽 重感情">
+    <div class="spacer"></div>
+    <input class="field" id="fix" placeholder="纠正（可选）：对上次蒸馏不满意时填，如：他不会冷淡，他其实很细心">
     <div class="spacer"></div>
     <select class="field" id="provider" onchange="onProvider()">
       <option value="custom" selected>自定义模型（手动填写地址和模型名）</option>
@@ -490,7 +540,10 @@ _HTML = """<!DOCTYPE html>
     <div class="spacer"></div>
     <input class="field" id="model" placeholder="模型名（自动匹配，可再修改）">
     <div class="spacer"></div>
-    <input class="field" id="api_key" type="password" placeholder="API key（向模型供应商申请，必需）">
+    <div class="key-row">
+      <input class="field" id="api_key" type="password" placeholder="API key（向模型供应商申请，必需）" style="flex:1">
+      <button class="ghost key-toggle" id="key_toggle" type="button" onclick="toggleKey()">显示</button>
+    </div>
     <div class="key-note">本项目完全开源，不会获取您的任何个人信息和 key；API key 仅用于调用您自己选择的模型服务，只保存在本地。</div>
     <div class="hint">选择供应商后会自动填好地址和模型名；想用别的模型直接改这两格即可。API key 请去对应供应商官网申请。性格画像填得越具体，蒸馏出来越像 TA（如：INTJ 摩羯座 爱吐槽 重感情 游戏宅）。</div>
     <div class="spacer"></div>
@@ -517,7 +570,7 @@ _HTML = """<!DOCTYPE html>
   </div>
 
   <div class="card">
-    <div class="label">导入buzz · 把 AI 朋友装进 buzz 开聊（buzz 是免费开源 AI 聊天室，可组建无数个社群）</div>
+    <div class="label"><span class="lb-num">3</span>导入buzz · 把 AI 朋友装进 buzz 开聊（buzz 是免费开源 AI 聊天室，可组建无数个社群）</div>
     <div class="guide-step"><span class="gs-num">1</span><span>点下面的按钮 —— 自动打开导出文件夹并复制路径；<b>名称栏不填也会全部导入</b></span></div>
     <div class="guide-step"><span class="gs-num">2</span><span>打开 buzz 桌面端 → 进 My Agents → 点「导入」→ 粘贴路径（或直接把文件拖进窗口）</span></div>
     <div class="guide-step"><span class="gs-num">3</span><span>在频道里 <b>@这个 agent</b> 就能聊天；把多个 agent 拉进同一频道就是一个社群，想建几个建几个</span></div>
@@ -527,7 +580,47 @@ _HTML = """<!DOCTYPE html>
 
 <script>
   /*__T__*/
-  function onLang(v) { pywebview.api.set_lang(v); }
+  /*__STATE__*/
+
+  /* 切语言保留表单状态：切换前采集，重载后恢复（不再清空用户已填内容） */
+  function collectState() {
+    return JSON.stringify({
+      chat: el("chat").value, name: el("name").value, self_name: el("self_name").value,
+      profile: el("profile").value, fix: el("fix").value, provider: el("provider").value,
+      base_url: el("base_url").value, model: el("model").value, api_key: el("api_key").value,
+      source: el("source").value, with_memory: el("with_memory").checked
+    });
+  }
+  function restoreState() {
+    var s = window.__S;
+    if (!s) return;
+    try {
+      if (s.source) el("source").value = s.source;
+      if (s.provider) el("provider").value = s.provider;   // 直接赋值，不触发 onProvider（不覆盖已填地址/模型）
+      el("name").value = s.name || "";
+      el("self_name").value = s.self_name || "";
+      el("profile").value = s.profile || "";
+      el("fix").value = s.fix || "";
+      el("base_url").value = s.base_url || "";
+      el("model").value = s.model || "";
+      el("api_key").value = s.api_key || "";
+      el("with_memory").checked = !!s.with_memory;
+      if (s.chat) {
+        el("chat").value = s.chat;
+        el("drop_hint").textContent = T.selected + s.chat;
+        el("dropzone").style.borderColor = "var(--ok)";
+      }
+      onSource();   // 恢复昵称提示；已有文件时会自动重新识别
+    } catch (e) {}
+  }
+  function onLang(v) { pywebview.api.set_lang(v, collectState()); }
+
+  /* API key 明文/密文切换 */
+  function toggleKey() {
+    var k = el("api_key"), b = el("key_toggle");
+    if (k.type === "password") { k.type = "text"; b.textContent = T.hide_key; }
+    else { k.type = "password"; b.textContent = T.show_key; }
+  }
 
   /* 2026-08 常见 OpenAI-compatible 供应商：选供应商自动映射 base_url 与默认模型名 */
   var PROVIDERS = {
@@ -627,6 +720,7 @@ _HTML = """<!DOCTYPE html>
     el("dropzone").classList.remove("over");
     var f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (!f) { setStatus(T.no_file, "warn"); return; }
+    markStep(1, "active");   // 拖入即进入步骤 1（与 pick() 一致）
     setStatus(T.detecting);
     var reader = new FileReader();
     reader.onload = function (ev) {
@@ -642,6 +736,7 @@ _HTML = """<!DOCTYPE html>
   function pick() {
     pywebview.api.open_file().then(function (path) {
       if (path) { setFile(path); inspectChat(); }
+      /* 空路径 = 用户取消选择（或环境无 tkinter）：静默，不弹误导性提示 */
     });
   }
 
@@ -687,7 +782,7 @@ _HTML = """<!DOCTYPE html>
     el("success_banner").classList.remove("show");
     markStep(2, "active");   // 原料就绪 → 蒸馏中
 
-    pywebview.api.start(chat, name, base_url, api_key, model, el("with_memory").checked, el("profile").value.trim(), el("self_name").value.trim(), el("source").value).then(function (res) {
+    pywebview.api.start(chat, name, base_url, api_key, model, el("with_memory").checked, el("profile").value.trim(), el("self_name").value.trim(), el("source").value, el("fix").value.trim()).then(function (res) {
       go.disabled = false;
       el("spinner").classList.add("hidden");
       el("go_text").textContent = T.start;
@@ -717,9 +812,14 @@ _HTML = """<!DOCTYPE html>
     pywebview.api.import_buzz(el("name").value.trim()).then(function (res) {
       (res.logs || []).forEach(appendClassified);
       if (res.ok) markStep(4, "done");
-      else append(T.error_prefix + res.error, "err");
+      else if (res.error) append(T.error_prefix + res.error, "err");
+      // 无成品时 res.ok=false 且无 error：日志里已有友好提示，步骤 4 不变绿误导
     });
   }
+
+  /* 初始化：key 按钮文案随语言 + 恢复切语言前的表单状态 */
+  el("key_toggle").textContent = T.show_key;
+  restoreState();
 </script>
 </body>
 </html>
@@ -734,40 +834,65 @@ class Api:
 
     def __init__(self, lang: str = "zh"):
         self.lang = lang if lang in ("zh", "en") else "zh"
+        self._pending_state = ""   # 切语言前的表单状态 JSON（重载后恢复，下划线避开桥接枚举）
+        self._lang_lock = threading.Lock()  # 保护 lang / _pending_state 跨线程访问
 
-    def set_lang(self, lang: str) -> bool:
-        """切换界面语言。
+    def set_lang(self, lang: str, state: str = "") -> bool:
+        """切换界面语言。state 为 JS 采集的表单状态 JSON，重载后恢复（切换不再清空输入）。
 
         不能同步 load_html：那会销毁 pywebview 的回调表（_returnValuesCallbacks），
         本 js_api 调用返回时就无法投递结果 → TypeError。改为更新语言后延迟重载，
-        让返回值先送达旧页面。切换会清空当前输入。
+        让返回值先送达旧页面。
         """
         lang = lang if lang in ("zh", "en") else "zh"
-        if lang != self.lang:
-            self.lang = lang
-            threading.Timer(0.15, self._apply_lang).start()
+        try:
+            obj = json.loads(state) if state else None
+            pending = json.dumps(obj, ensure_ascii=False) if isinstance(obj, dict) else ""
+        except Exception:
+            pending = ""
+        with self._lang_lock:
+            self._pending_state = pending
+            if lang != self.lang:
+                self.lang = lang
+                threading.Timer(0.15, self._apply_lang).start()
         return True
 
     def _apply_lang(self) -> None:
         try:
+            with self._lang_lock:
+                current_lang = self.lang
+                state = self._pending_state
             if _GUI_WINDOW is not None:
-                _GUI_WINDOW.load_html(_build_html(self.lang))
+                _GUI_WINDOW.load_html(_build_html(current_lang, state))
         except Exception:
             pass  # 竞态容错：返回值回调已尽力先送达
+        try:
+            # 标题随语言切换；单独容错：失败不影响界面重载本身（部分后端需在主线程调）
+            if _GUI_WINDOW is not None:
+                _GUI_WINDOW.set_title(_GUI_TITLES[current_lang])
+        except Exception:
+            pass
 
     def open_file(self) -> str:
-        from tkinter import filedialog
-        path = filedialog.askopenfilename(
-            title="选择聊天文件" if self.lang == "zh" else "Choose chat file",
-            filetypes=[("聊天文件", "*.json *.txt") if self.lang == "zh" else ("Chat file", "*.json *.txt"),
-                       ("所有文件", "*.*") if self.lang == "zh" else ("All files", "*.*")])
-        return path or ""
+        try:
+            from tkinter import filedialog
+        except Exception:
+            return ""  # 无 tkinter（精简版 Python）→ 返回空，前端提示改用拖拽
+        try:
+            path = filedialog.askopenfilename(
+                title="选择聊天文件" if self.lang == "zh" else "Choose chat file",
+                filetypes=[("聊天文件", "*.json *.txt") if self.lang == "zh" else ("Chat file", "*.json *.txt"),
+                           ("所有文件", "*.*") if self.lang == "zh" else ("All files", "*.*")])
+            return path or ""
+        except Exception:
+            return ""
 
     def inspect_chat(self, path: str, source: str = "auto") -> dict:
         """识别聊天文件格式与消息数，给低门槛用户即时反馈。"""
         try:
             fmt = source if source and source != "auto" else detect_source(path)
-            msgs = parse_messages(path, source=source)
+            # 传 fmt 给 parse_messages 避免内部重复 detect_source
+            msgs = parse_messages(path, source=fmt)
             return {"ok": True, "format": SOURCE_LABELS.get(fmt, fmt), "count": len(msgs), "source": fmt}
         except Exception as e:
             return {"ok": False, "error": _tr_error(str(e), self.lang)}
@@ -779,18 +904,27 @@ class Api:
             ext = Path(filename).suffix.lower()
             if ext not in (".json", ".txt"):
                 ext = ".txt"
-            dropped = Path("build") / "dropped"
+            dropped = _gui_workdir() / "dropped"
             dropped.mkdir(parents=True, exist_ok=True)
+            # 清理 24 小时前的拖拽落盘，避免反复拖拽堆积垃圾文件（失败不阻断主流程）
+            cutoff = time.time() - 24 * 3600
+            for old in dropped.iterdir():
+                try:
+                    if old.is_file() and old.stat().st_mtime < cutoff:
+                        old.unlink()
+                except OSError:
+                    pass
             stem = safe_filename(Path(filename).stem or "chat")
             p = dropped / f"{stem}-{uuid.uuid4().hex[:6]}{ext}"
             p.write_bytes(data)
+            # 识别格式（一次）后把 source 传给 parse_messages，避免重复 detect_source
             fmt = source if source and source != "auto" else detect_source(str(p))
-            msgs = parse_messages(str(p), source=source)
+            msgs = parse_messages(str(p), source=fmt)
             return {"ok": True, "path": str(p), "format": SOURCE_LABELS.get(fmt, fmt), "count": len(msgs)}
         except Exception as e:
             return {"ok": False, "error": _tr_error(str(e), self.lang)}
 
-    def start(self, chat: str, name: str, base_url: str, api_key: str, model: str, with_memory: bool = False, profile: str = "", self_name: str = "", source: str = "auto") -> dict:
+    def start(self, chat: str, name: str, base_url: str, api_key: str, model: str, with_memory: bool = False, profile: str = "", self_name: str = "", source: str = "auto", fix: str = "") -> dict:
         model_config = {"base_url": base_url, "api_key": api_key, "model": model}
         streamed = False
 
@@ -806,15 +940,18 @@ class Api:
                 pass
 
         try:
-            logs = run_pipeline(chat, name, model_config, "build", with_memory, on_log=on_log, manual_profile=profile, self_name=self_name, source=source, lang=self.lang)
+            logs = run_pipeline(chat, name, model_config, str(_gui_workdir()), with_memory, on_log=on_log, manual_profile=profile, self_name=self_name, source=source, lang=self.lang, fix=fix)
             return {"ok": True, "logs": logs, "streamed": streamed}
         except Exception as e:  # noqa: BLE001 — 边界统一转给前端展示
             return {"ok": False, "error": _tr_error(str(e), self.lang)}
 
     def import_buzz(self, name: str) -> dict:
         try:
-            logs = import_to_buzz(name, "build", lang=self.lang)
-            return {"ok": True, "logs": logs}
+            logs = import_to_buzz(name, str(_gui_workdir()), lang=self.lang)
+            # ok 只认"真有成品可导"：没有成品时日志里已有友好提示，但步骤 4 不该变绿误导用户
+            export_dir = _gui_workdir() / "export"
+            ok = export_dir.exists() and any(export_dir.glob("*.agent.json"))
+            return {"ok": ok, "logs": logs}
         except Exception as e:
             return {"ok": False, "error": _tr_error(str(e), self.lang), "logs": []}
 
@@ -826,7 +963,7 @@ def run_gui(lang: str = "auto") -> None:
         lang = _detect_lang()
     api = Api(lang)
     window = webview.create_window(
-        "Alchemy Hive · 把微信聊天蒸馏成 AI 朋友" if lang == "zh" else "Alchemy Hive · Distill chats into AI friends",
+        _GUI_TITLES[lang],
         html=_build_html(lang),
         js_api=api,
         width=780, height=940,

@@ -54,6 +54,16 @@ def _read_head(path: Path) -> str:
     return raw.decode("utf-8", errors="ignore")
 
 
+def _read_tail(path: Path) -> str:
+    """读文件末尾 _HEAD_SAMPLE 字节作为识别补采样（仅在大文件时调用）。"""
+    size = path.stat().st_size
+    with path.open("rb") as f:
+        if size > _HEAD_SAMPLE:
+            f.seek(size - _HEAD_SAMPLE)
+        raw = f.read(_HEAD_SAMPLE)
+    return raw.decode("utf-8", errors="ignore")
+
+
 def detect_source(path: str) -> str:
     """按内容特征识别导出来源平台。返回 SOURCE_LABELS 里的标识。"""
     p = Path(path)
@@ -67,6 +77,11 @@ def detect_source(path: str) -> str:
             return "weflow"                     # 微信 WeFlow 导出
         if '"date"' in head and '"from"' in head and '"text"' in head:
             return "telegram"                   # Telegram Desktop 导出
+        # 头部判不出再补采尾部：大导出首条消息超长时，Meta 的 messages 特征可能落在 64KB 之后
+        if p.stat().st_size > _HEAD_SAMPLE:
+            tail = _read_tail(p)
+            if '"timestamp_ms"' in tail and '"sender_name"' in tail:
+                return "meta"
         return "generic_json"
     if re.search(r"^\[\d{1,2}/\d{1,2}/\d{2,4},", head, re.M):
         return "whatsapp"                       # [MM/DD/YY, h:mm AM/PM] Sender: ...
@@ -82,11 +97,14 @@ def _normalize_iso(ts: str) -> str:
 
 
 def _normalize_ts_ms(ms) -> str:
-    """Meta 导出的 Unix 毫秒时间戳（int 或字符串）→ 本地 'YYYY-MM-DD HH:MM:SS'。"""
+    """Meta 导出的 Unix 毫秒时间戳（int 或字符串）→ UTC 'YYYY-MM-DD HH:MM:SS'。
+
+    用 UTC 而非 localtime：保证同一文件在不同时区机器上解析结果一致。
+    """
     try:
         if isinstance(ms, str):
             ms = float(ms)
-        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ms / 1000))
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ms / 1000))
     except Exception:
         return ""
 
@@ -135,27 +153,49 @@ def _wa_ts(year: int, month: int, day: int, hour: int, minute: int, second: int,
     return f"{year:04d}-{month:02d}-{day:02d} {h:02d}:{minute:02d}:{second:02d}"
 
 
+def _wa_day_first(matches: list) -> bool:
+    """判定 WhatsApp 日期是 DD/MM 还是 MM/DD。
+
+    导出格式跟随设备 locale（非美区 Android 常见 DD/MM/YY），两种都合法无法从单条区分；
+    用全文件启发式：任一行"首位" >12 则该位只能是日 → DD/MM；任一行"次位" >12 → 确认 MM/DD；
+    都判不出时默认美式 MM/DD（WhatsApp 官方导出默认）。
+    """
+    for m in matches:
+        if int(m.group(1)) > 12:
+            return True
+    for m in matches:
+        if int(m.group(2)) > 12:
+            return False
+    return False
+
+
 def _parse_whatsapp(path: Path, enc: str) -> list[Message]:
-    """WhatsApp 导出 txt：[日期, 时间 AM/PM] 发送者: 内容。跳过媒体/系统行，续行接上一句。"""
-    out: list[Message] = []
+    """WhatsApp 导出 txt：[日期, 时间 AM/PM] 发送者: 内容。跳过媒体/系统行，续行接上一句。
+
+    两趟：先全文件判定 DD/MM 还是 MM/DD（_wa_day_first），再按结论构建消息。
+    """
     with path.open("r", encoding=enc) as f:
-        for line in f:
-            line = line.rstrip("\r\n")
-            m = _WHATSAPP_LINE.match(line)
-            if m:
-                mo, da, yr, hh, mm, ss, ap, sender, content = m.groups()
-                sender = (sender or "").strip()
-                content = (content or "").strip()
-                if not sender or not content or content.startswith("[") or _MEDIA_EXT.search(content):
-                    continue
-                out.append(Message(
-                    sender=sender,
-                    content=content,
-                    timestamp=_wa_ts(int(yr), int(mo), int(da), int(hh), int(mm), int(ss or 0), ap),
-                ))
-            elif out and line.strip() and not line.strip().startswith("["):
-                # 续行：长消息换行，接在上一句末尾
-                out[-1].content += "\n" + line.strip()
+        lines = [ln.rstrip("\r\n") for ln in f]
+    matches = [_WHATSAPP_LINE.match(ln) for ln in lines]
+    day_first = _wa_day_first([m for m in matches if m])
+    out: list[Message] = []
+    for line, m in zip(lines, matches):
+        if m:
+            mo, da, yr, hh, mm, ss, ap, sender, content = m.groups()
+            if day_first:
+                mo, da = da, mo
+            sender = (sender or "").strip()
+            content = (content or "").strip()
+            if not sender or not content or content.startswith("[") or _MEDIA_EXT.search(content):
+                continue
+            out.append(Message(
+                sender=sender,
+                content=content,
+                timestamp=_wa_ts(int(yr), int(mo), int(da), int(hh), int(mm), int(ss or 0), ap),
+            ))
+        elif out and line.strip() and not line.strip().startswith("["):
+            # 续行：长消息换行，接在上一句末尾
+            out[-1].content += "\n" + line.strip()
     return out
 
 
@@ -258,7 +298,7 @@ def _parse_json(path: Path) -> list[Message]:
 _TIME_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})\s*['\"]?(.+?)['\"]?\s*$")
 
 # 编码探测：只读前 256KB 判断，避免大文件反复整读
-_ENCODINGS = ("utf-8-sig", "utf-8", "gbk")
+_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "gb18030")
 _ENCODING_SAMPLE = 262144
 
 
@@ -328,11 +368,13 @@ def _parse_txt(path: Path) -> list[Message]:
     try:
         return _parse_txt_with_encoding(path, enc)
     except UnicodeDecodeError:
-        # 罕见：ASCII 开头 + 后面才出现中文，采样判成 utf-8 但 gbk 文件 → 改 gbk 重试
-        try:
-            return _parse_txt_with_encoding(path, "gbk")
-        except UnicodeDecodeError:
-            raise ValueError(f"文件 {path} 解码失败：包含非法字符，可能已损坏")
+        # 罕见：ASCII 开头 + 后面才出现中文，采样判成 utf-8 但 gbk/gb18030 文件 → 逐级重试
+        for enc in ("gbk", "gb18030"):
+            try:
+                return _parse_txt_with_encoding(path, enc)
+            except UnicodeDecodeError:
+                continue
+        raise ValueError(f"文件 {path} 解码失败：包含非法字符，可能已损坏")
 
 
 def _normalize_self(messages: list[Message], self_aliases: list[str] | None = None) -> None:

@@ -44,6 +44,8 @@ def mock_llm(monkeypatch):
         )()
 
     monkeypatch.setattr("alchemy_hive.core.llm.httpx.post", fake_post)
+    # 隔离本机配置：管线会读配置文件 [build] 段，测试不得受开发机 ~/.alchemy-hive 影响
+    monkeypatch.setattr("alchemy_hive.gui.actions.load_config", lambda path=None: {})
     return captured
 
 
@@ -101,6 +103,36 @@ def test_gui_actions_pipeline_streams_logs_and_shows_model(mock_llm, tmp_path, e
     assert received == logs, "on_log 应逐行收到与返回日志一致的内容"
     assert any(l.startswith("[distill] 调用模型") and "http://x" in l for l in logs)
     assert len(logs) >= 6
+
+
+def test_gui_actions_build_section_from_config(mock_llm, tmp_path, examples_dir, monkeypatch):
+    """配置文件 [build] 段在 GUI 同样生效（与 CLI 对等）：撰写阶段改用 build 模型。"""
+    monkeypatch.setattr("alchemy_hive.gui.actions.load_config", lambda path=None: {
+        "build": {"base_url": "http://b", "api_key": "bk", "model": "strong-model"},
+    })
+    logs = run_pipeline(str(examples_dir / "chat.txt"), "小明", MODEL_CONFIG, str(tmp_path))
+    assert any("[build]" in l and "strong-model" in l for l in logs), "应日志透明披露撰写模型覆盖"
+    # 最后一次请求是 build 阶段，发往 [build] 端点、用 build 模型
+    assert mock_llm["url"].startswith("http://b")
+    assert mock_llm["json"]["model"] == "strong-model"
+
+
+def test_gui_actions_accumulates_corrections_and_profile(mock_llm, tmp_path, examples_dir):
+    """GUI 重复蒸馏：fix 叠加到已有 corrections；不填画像时复用上次的 manual_profile（与 CLI 对等）。"""
+    run_pipeline(str(examples_dir / "chat.txt"), "小明", MODEL_CONFIG, str(tmp_path),
+                 manual_profile="INTJ 爱吐槽", fix="他不会冷淡")
+    doc = json.loads((tmp_path / "persona" / "小明.json").read_text(encoding="utf-8"))
+    assert doc["manual_profile"] == "INTJ 爱吐槽"
+    assert doc["corrections"] == ["他不会冷淡"]
+    # 第二次：不填画像不填 fix → 画像沿用，纠正不重复；再填 fix → 叠加
+    run_pipeline(str(examples_dir / "chat.txt"), "小明", MODEL_CONFIG, str(tmp_path))
+    doc = json.loads((tmp_path / "persona" / "小明.json").read_text(encoding="utf-8"))
+    assert doc["manual_profile"] == "INTJ 爱吐槽", "未填画像时应复用上次蒸馏的手动画像"
+    assert doc["corrections"] == ["他不会冷淡"]
+    run_pipeline(str(examples_dir / "chat.txt"), "小明", MODEL_CONFIG, str(tmp_path), fix="他其实很细心")
+    doc = json.loads((tmp_path / "persona" / "小明.json").read_text(encoding="utf-8"))
+    assert doc["corrections"] == ["他不会冷淡", "他其实很细心"]
+    assert doc["manual_profile"] == "INTJ 爱吐槽"
 
 
 def test_js_api_has_no_introspected_window():

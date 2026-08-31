@@ -1,11 +1,12 @@
 """蒸馏引擎（核心）：两阶段 LLM 蒸馏，对齐 dot-skill。
 
-Stage 1 analyze：跨时间线抽样聊天 → LLM 输出结构化分析 JSON（性格/表达/情绪逻辑/10-30 条带原话的记忆）。
+Stage 1 analyze：跨时间线抽样聊天 → LLM 输出结构化分析 JSON（性格/表达/情绪逻辑/20-40 条带原话的记忆）。
 Stage 2 build：基于分析 JSON → LLM 写出 ≥400 行的完整角色 persona（Markdown），作为最终 system_prompt。
 build 失败时降级为结构化渲染（build_system_prompt），绝不返回空。
 """
 import json
 import re
+from pathlib import Path
 
 from .models import Message, PersonaDoc
 from .prompt import ANALYZE_PROMPT, BUILD_PROMPT, build_system_prompt
@@ -15,12 +16,28 @@ from .llm import chat_completion, LLMError
 class DistillError(LLMError):
     """蒸馏失败：缺少模型配置或 LLM 调用失败。"""
 
+# 默认配置路径（相对 CWD）；找不到时回退用户主目录，保证任意目录启动都能用同一份配置
+DEFAULT_CONFIG_PATH = ".alchemy-hive/config.toml"
+
+
+def resolve_config_path(path: str | None = None) -> str:
+    """解析配置路径：存在即用；默认路径缺失时回退 ~/.alchemy-hive/config.toml。
+
+    显式指定的自定义路径不回退（找不到时原样返回，由 load_config 按空配置处理），
+    保证测试与 --config 指定行为可预期。
+    """
+    if path and Path(path).exists():
+        return path
+    home_cfg = Path.home() / ".alchemy-hive" / "config.toml"
+    if (not path or path == DEFAULT_CONFIG_PATH) and home_cfg.exists():
+        return str(home_cfg)
+    return path or DEFAULT_CONFIG_PATH
+
 
 def load_config(path: str | None) -> dict:
     """读 toml 配置；无文件返回空 dict。支持 .alchemy-hive/config.toml。"""
     if not path:
         return {}
-    from pathlib import Path
     try:
         import tomllib  # py3.11+
     except ModuleNotFoundError:
@@ -42,29 +59,78 @@ def load_config(path: str | None) -> dict:
 _SAMPLE_RECENT = 1500   # 近期完整消息数（覆盖当前关系动态）
 _SAMPLE_EARLY = 300     # 早期消息数（覆盖共同记忆来源）
 _PER_MSG_CAP = 1000     # 单条超长消息兜底截断（罕见），正文默认完整
+_CHAR_BUDGET = 240_000  # 样本总字符预算：超了就动态减样本数，避免撞模型上下文上限（400）
+_MIN_RECENT = 50        # 预算收缩时近期样本的保底条数（近期动态是画像主依据）
 
 
-def _sample_text(messages: list[Message], recent: int = _SAMPLE_RECENT, early: int = _SAMPLE_EARLY, per_msg_cap: int = _PER_MSG_CAP) -> str:
-    """近期完整 + 早期抽样；正文不截断（仅单条超长时兜底截断）。"""
-    if len(messages) <= recent:
-        picked = list(messages)
-    else:
-        picked = messages[:early] + messages[-recent:]
+def _render_parts(msgs: list[Message], per_msg_cap: int) -> list[str]:
     parts = []
-    for m in picked:
+    for m in msgs:
         content = m.content or ""
         if per_msg_cap and len(content) > per_msg_cap:
             content = content[:per_msg_cap] + "…"
         parts.append(f"{m.timestamp} {m.sender}: {content}")
+    return parts
+
+
+def _sample_text(messages: list[Message], recent: int = _SAMPLE_RECENT, early: int = _SAMPLE_EARLY,
+                 per_msg_cap: int = _PER_MSG_CAP, char_budget: int = _CHAR_BUDGET) -> str:
+    """近期完整 + 早期抽样；正文不截断（仅单条超长时兜底截断）。
+
+    总字符超预算时动态缩减样本数（先丢早期、再对半减近期，至少留 _MIN_RECENT 条），
+    避免大聊天记录撞模型上下文上限。
+    """
+    splittable = len(messages) > recent
+    if splittable:
+        picked = messages[:early] + messages[-recent:]
+    else:
+        picked = list(messages)
+    parts = _render_parts(picked, per_msg_cap)
+    total = sum(len(p) for p in parts)
+    recent_n = min(recent, len(messages))
+    early_n = len(picked) - recent_n if splittable else 0
+    while splittable and total > char_budget:
+        if early_n > 0:
+            early_n = 0                          # 先丢早期抽样
+        elif recent_n > _MIN_RECENT:
+            recent_n = max(_MIN_RECENT, recent_n // 2)  # 再对半减近期
+        else:
+            break                                # 已到底仍超：交给模型侧报错，不再阉割
+        picked = (messages[:early_n] if early_n else []) + messages[-recent_n:]
+        parts = _render_parts(picked, per_msg_cap)
+        total = sum(len(p) for p in parts)
     return "\n".join(parts)
 
 
 def _parse_json_object(content: str) -> dict | None:
+    """从 LLM 响应中提取 JSON 对象。
+
+    策略：
+    1. 直接 json.loads（LLM 有时返回纯 JSON）
+    2. 找最外层 {…}（可能被 ```json``` 包裹）再 parse
+    不再用正则全局替换反引号，避免误伤 JSON 内容。
+    """
+    text = content.strip()
+    # 直接尝试
     try:
-        payload = json.loads(re.sub(r"```(json)?|```", "", content).strip())
+        payload = json.loads(text)
+        return payload if isinstance(payload, dict) else None
     except (ValueError, TypeError):
-        return None
-    return payload if isinstance(payload, dict) else None
+        pass
+    # 去掉 markdown 代码围栏再试：只剥离首尾的 ```json / ```，不去动内容
+    stripped = text
+    if stripped.startswith("```"):
+        first_nl = stripped.find("\n")
+        if first_nl != -1:
+            stripped = stripped[first_nl + 1:]
+    if stripped.endswith("```"):
+        stripped = stripped[:-3].rstrip("\n")
+    try:
+        payload = json.loads(stripped)
+        return payload if isinstance(payload, dict) else None
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _chat(config: dict, messages: list[dict], *, temperature: float, json_mode: bool = False, max_tokens: int | None = None, timeout: float = 180) -> str:
@@ -173,7 +239,8 @@ def distill(messages: list[Message], name: str, config: dict, manual_profile: st
     """
     if not messages:
         raise DistillError(
-            "没有可分析的聊天消息：文件可能为空，或格式不是 WeFlow JSON / 微信 txt。"
+            "没有可分析的聊天消息：文件可能为空，或不是支持的导出格式"
+            "（微信 WeFlow JSON / 微信 txt / Telegram / WhatsApp / Instagram·Facebook）。"
         )
     api_key = (config.get("model") or {}).get("api_key")
     if not api_key:

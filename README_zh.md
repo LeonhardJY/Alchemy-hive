@@ -23,7 +23,7 @@
 聊天文件（微信 / Telegram / WhatsApp / Instagram / Facebook / 通用）
   → parser：detect_source 采样 64KB 识别平台；--self 归一化「我」；时间戳统一
   → distill：
-      analyze   全正文样本（近期 1500 条 + 早期 300 条，不截断）→ 结构化 JSON 分析
+      analyze   全正文样本（近期 1500 条 + 早期 300 条，不截断；超字符预算时动态缩减样本数）→ 结构化 JSON 分析
       build     基于分析 → ≥400 行 persona Markdown（[build] 段可覆盖更强撰写模型）
       ├── --profile  手动画像（行为规则优先于聊天记录）
       └── --fix      交互校正（corrections 累积进 persona）
@@ -41,7 +41,7 @@
 ## 特点
 
 - **多平台导入**：采样文件前 64KB 自动识别 WeFlow JSON、微信 txt、Telegram JSON、WhatsApp txt、Instagram/Facebook（Meta 共用一套格式）；识别失败回退通用字段探测（content/sender/time 等常见别名）
-- **时间归一化**：Telegram ISO、WhatsApp `MM/DD/YY, h:mm AM/PM`、Meta `timestamp_ms` 统一转为 `YYYY-MM-DD HH:MM:SS`；Meta 导出是新的在前，自动按时间升序排序，保证"近期样本"取对
+- **时间归一化**：Telegram ISO、WhatsApp `MM/DD/YY, h:mm AM/PM`、Meta `timestamp_ms` 统一转为 `YYYY-MM-DD HH:MM:SS`；WhatsApp 日期跟随设备 locale（DD/MM 或 MM/DD）自动启发式判定；Meta 导出是新的在前，自动按时间升序排序，保证"近期样本"取对
 - **方向判定**：WeFlow 用 `isSend` 字段；其余平台导出无方向标记，用 `--self 你的昵称` 指定，消息发送者归一化为「我」
 - **两阶段蒸馏**：analyze（结构化分析 + 20-40 条带原话的共同记忆）→ build（长 persona 正文）；`[build]` 配置段可换更强模型撰写
 - **盲测**：抽真实片段让 agent 接话，1-5 分人工打分，平均分作为"像不像"的量化指标

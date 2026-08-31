@@ -138,6 +138,24 @@ def test_whatsapp_two_digit_and_single_digit_date(tmp_path):
     assert parse_messages(_write(tmp_path, "wa2.txt", "[9/5/23, 9:29:09 AM] 小明: 在\n"))[0].timestamp == "2023-09-05 09:29:09"
 
 
+def test_whatsapp_dd_mm_locale_detected(tmp_path):
+    # 非美区 Android 导出是 DD/MM/YY：[25/12] 的 25 只可能是日 → 整份判为 DD/MM，
+    # 含歧义行 [13/02]（两段都 ≤12）也跟随结论，不静默错位成 13 月
+    text = (
+        "[13/02/23, 9:29:09 AM] 小明: 在吗\n"
+        "[25/12/23, 9:31:53 AM] 小明: 圣诞快乐\n"
+    )
+    msgs = parse_messages(_write(tmp_path, "wa.txt", text))
+    assert msgs[0].timestamp == "2023-02-13 09:29:09"
+    assert msgs[1].timestamp == "2023-12-25 09:31:53"
+
+
+def test_whatsapp_mm_dd_confirmed_when_second_gt_12(tmp_path):
+    # "日位" >12 → 确认美式 MM/DD（不歧义时保持默认解读）
+    text = "[07/24/23, 9:29:09 AM] 小明: 晚上好\n"
+    assert parse_messages(_write(tmp_path, "wa.txt", text))[0].timestamp == "2023-07-24 09:29:09"
+
+
 # ---------- Instagram / Facebook（Meta 共用格式） ----------
 
 def _meta(messages):
@@ -176,6 +194,16 @@ def test_meta_missing_sender_becomes_unknown(tmp_path):
     assert parse_messages(path)[0].sender == "unknown"
 
 
+def test_meta_features_beyond_head_detected_via_tail(tmp_path):
+    """大 JSON 前 64KB 无特征（首字段超长）→ 尾部补采样仍识别为 meta，不误判 generic_json。"""
+    data = {"about": "a" * 200_000, "messages": [
+        {"sender_name": "小明", "timestamp_ms": 1690252320000, "content": "在吗"},
+    ]}
+    path = _write(tmp_path, "big.json", json.dumps(data, ensure_ascii=False))
+    assert detect_source(path) == "meta"
+    assert parse_messages(path)[0].content == "在吗"
+
+
 def test_meta_timestamp_variants(tmp_path):
     path_int = _write(tmp_path, "ig_int.json", _meta([_meta_msg(timestamp_ms=1690252320000)]))
     path_str = _write(tmp_path, "ig_str.json", _meta([_meta_msg(timestamp_ms="1690252320000")]))
@@ -184,6 +212,13 @@ def test_meta_timestamp_variants(tmp_path):
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", ts_int)
     assert parse_messages(path_str)[0].timestamp == ts_int     # 字符串时间戳同样归一化
     assert parse_messages(path_none)[0].timestamp == ""
+
+
+def test_meta_timestamp_uses_utc():
+    """修复回归：Meta 时间戳应用 UTC 而非 localtime，保证跨时区一致。"""
+    from alchemy_hive.core.parser import _normalize_ts_ms
+    # 1690252320000 ms = 2023-07-25 02:32:00 UTC（不可变：不随系统时区变化）
+    assert _normalize_ts_ms(1690252320000) == "2023-07-25 02:32:00"
 
 
 # ---------- 检测与通用兜底 ----------
@@ -222,3 +257,16 @@ def test_forced_txt_platform_on_json_uses_auto(tmp_path):
     # 对 JSON 强选 WhatsApp（txt 平台）→ 扩展名不符，直接按自动识别
     path = _write(tmp_path, "chat.json", json.dumps([{"sender": "a", "content": "在吗"}]))
     assert parse_messages(path, source="whatsapp")[0].content == "在吗"
+
+
+# ---------- 编码回退 ----------
+
+def test_gb18030_encoding_fallback(tmp_path):
+    """修复回归：GB18030 超集编码（旧微信常见）不再误报"文件损坏"。"""
+    # GB18030 特有字符（GBK 不包含）：嘢（GB18030 0xA3 0xB0）
+    content = "2023-07-24 09:29:09 '小明'\n今天食嘢未\n"
+    p = tmp_path / "gb18030.txt"
+    p.write_bytes(content.encode("gb18030"))
+    msgs = parse_messages(str(p))
+    assert len(msgs) == 1
+    assert "嘢" in msgs[0].content

@@ -39,8 +39,50 @@ def test_extract_pairs_zero_n_returns_empty(examples_dir):
     assert extract_pairs(msgs, n=0) == []
 
 
+def test_extract_pairs_skips_their_own_rant():
+    """上文末条必须是本人发言：对方连发自说自话不算"对我回复"，不参与盲测。"""
+    from alchemy_hive.core.models import Message
+    msgs = [
+        Message(sender="小明", content="在吗", timestamp="2023-01-01 00:00:00"),
+        Message(sender="小明", content="我跟你讲个事", timestamp="2023-01-01 00:00:01"),  # 连发：不采
+        Message(sender="我", content="讲", timestamp="2023-01-01 00:00:02"),
+        Message(sender="小明", content="明天放假", timestamp="2023-01-01 00:00:03"),      # 对本人回复：采
+    ]
+    pairs = extract_pairs(msgs, n=5)
+    assert [p["real_reply"].content for p in pairs] == ["明天放假"]
+
+
 def test_extract_pairs_empty_messages_returns_empty():
     assert extract_pairs([], n=5) == []
+
+
+def test_extract_pairs_custom_self_aliases():
+    """修复回归：extract_pairs 应识别 --self 自定义昵称（不只认 me/self/我）。"""
+    from alchemy_hive.core.models import Message
+    msgs = [
+        Message(sender="张三", content="在吗", timestamp="2023-01-01 00:00:00"),
+        Message(sender="小明", content="在", timestamp="2023-01-01 00:00:01"),  # 对张三回复：采
+    ]
+    # 无 self_aliases → "张三" 不被识别为本人，不会被排除
+    pairs_no_alias = extract_pairs(msgs, n=5)
+    # 有 self_aliases=["张三"] → "张三" 是本人，被排除；"小明" 对张三的回复被采
+    pairs_with_alias = extract_pairs(msgs, n=5, self_aliases=["张三"])
+    assert len(pairs_with_alias) == 1
+    assert pairs_with_alias[0]["real_reply"].sender == "小明"
+    # 无别名时张三的消息不会被过滤，也可能被采（取决于上下文）
+    # 关键区别：加了 self_aliases 后张三发的消息被正确排除
+
+
+def test_extract_pairs_case_insensitive_self():
+    """self_aliases 匹配应大小写不敏感（适配中英混合昵称）。"""
+    from alchemy_hive.core.models import Message
+    msgs = [
+        Message(sender="Alice", content="hi", timestamp="2023-01-01 00:00:00"),
+        Message(sender="小明", content="hello", timestamp="2023-01-01 00:00:01"),
+    ]
+    pairs = extract_pairs(msgs, n=5, self_aliases=["alice"])
+    assert len(pairs) == 1
+    assert pairs[0]["real_reply"].sender == "小明"
 
 
 def test_rate_pairs_summary():

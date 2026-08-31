@@ -141,7 +141,8 @@ def build_system_prompt(doc, data: dict) -> str:
     rhythm = data.get("rhythm") or doc.rhythm or ""
     repls = data.get("example_replies") or doc.example_replies or {}
     layers = data.get("layers") or doc.layers or {}
-    memories = data.get("memory") or doc.memory or []
+    # analyze 输出键是 memories；兼容旧产物的 memory 键，最后回退 doc.memory
+    memories = data.get("memories") or data.get("memory") or doc.memory or []
     mem_sig = data.get("memory_signature") or doc.memory_signature or ""
 
     lines = [f"你是{name}。" + (relationship if relationship else "")]

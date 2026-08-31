@@ -12,7 +12,8 @@ def import_chat(input_path: str, name: str, out_dir: str, self_aliases: str = ""
     aliases = [a.strip() for a in self_aliases.split(",") if a.strip()] or None
     msgs = parse_messages(input_path, self_aliases=aliases, source=source)
     if not msgs:
-        typer.echo("[警告] 解析出 0 条消息，请确认文件是 WeFlow 导出的 JSON 或微信导出的 txt（时间戳+发送者行）", err=True)
+        typer.echo("[警告] 解析出 0 条消息，请确认文件是支持的导出格式"
+                   "（微信 WeFlow JSON / 微信 txt / Telegram / WhatsApp / Instagram·Facebook）", err=True)
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     out = Path(out_dir) / f"{safe_filename(name)}.json"
     # 紧凑写入：大聊天记录用 indent 会又慢又大

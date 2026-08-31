@@ -13,7 +13,7 @@ from .distill_cmd import _find_parsed
 input = input
 
 
-def run_blindtest(name: str, workdir: str, config: dict, n: int) -> None:
+def run_blindtest(name: str, workdir: str, config: dict, n: int, self_aliases: list[str] | None = None) -> None:
     """逐条展示真实回复与 agent 接话，人工打 1-5 分，最后输出平均分。"""
     safe = safe_filename(name)
     parsed_path = _find_parsed(Path(workdir), name)
@@ -25,7 +25,16 @@ def run_blindtest(name: str, workdir: str, config: dict, n: int) -> None:
     persona_path = Path(workdir) / "persona" / f"{safe}.md"
     system_prompt = persona_path.read_text(encoding="utf-8") if persona_path.exists() else f"你是{name}。"
 
-    pairs = extract_pairs(msgs, n=n)
+    pairs = extract_pairs(msgs, n=n, self_aliases=self_aliases)
+    if not pairs:
+        typer.echo(
+            "未抽取到任何对话片段。常见原因：\n"
+            "  - 未配置 --self（无方向标记的导出需要它区分谁是你，请在 import 时也加 --self）\n"
+            "  - 聊天记录中对方连续发多条消息（没有你发言间隔）\n"
+            "  - 消息总数不足（需要至少 context_len+1 条有效片段）",
+            err=True,
+        )
+        raise typer.Exit(1)
     ratings: dict[int, int] = {}
     for i, pair in enumerate(pairs):
         typer.echo(f"\n--- 片段 {i + 1}/{len(pairs)} ---")

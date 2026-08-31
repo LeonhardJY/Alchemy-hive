@@ -23,7 +23,7 @@ Parses a chat export into structured messages, distills a persona with a two-sta
 chat file (WeChat / Telegram / WhatsApp / Instagram / Facebook / generic)
   → parser: detect_source samples the first 64KB to identify the platform; --self normalizes "me"; timestamps unified
   → distill:
-      analyze   full-text sample (recent 1500 + early 300 messages, no truncation) → structured JSON analysis
+      analyze   full-text sample (recent 1500 + early 300 messages, no truncation; sample count shrinks automatically if it exceeds the character budget) → structured JSON analysis
       build     analysis → ≥400-line persona Markdown ([build] section can override with a stronger model)
       ├── --profile  manual profile (behavior rules take priority over the chat)
       └── --fix      interactive correction (corrections accumulate into the persona)
@@ -41,7 +41,7 @@ chat file (WeChat / Telegram / WhatsApp / Instagram / Facebook / generic)
 ## Features
 
 - **Multi-platform import**: samples the first 64KB of the file to auto-detect WeFlow JSON, WeChat txt, Telegram JSON, WhatsApp txt, Instagram/Facebook (Meta — one shared format); falls back to generic field probing (`content`/`sender`/`time` and common aliases) when detection fails
-- **Timestamp normalization**: Telegram ISO, WhatsApp `MM/DD/YY, h:mm AM/PM`, Meta `timestamp_ms` are all converted to `YYYY-MM-DD HH:MM:SS`; Meta exports are newest-first, so messages are sorted ascending so the "recent sample" stays correct
+- **Timestamp normalization**: Telegram ISO, WhatsApp `MM/DD/YY, h:mm AM/PM`, Meta `timestamp_ms` are all converted to `YYYY-MM-DD HH:MM:SS`; WhatsApp date order follows the device locale (DD/MM vs MM/DD) and is detected heuristically; Meta exports are newest-first, so messages are sorted ascending so the "recent sample" stays correct
 - **Direction detection**: WeFlow uses the `isSend` field; other platforms have no direction marker, so pass `--self <your nickname>` and your messages are normalized to "me"
 - **Two-stage distillation**: analyze (structured analysis + 20-40 verbatim shared memories) → build (long-form persona); a `[build]` config section can swap in a stronger writing model
 - **Blindtest**: samples real conversation snippets, has the agent reply, and rates similarity 1-5 — the average quantifies "how close it feels"

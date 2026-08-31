@@ -5,7 +5,7 @@ from .import_cmd import import_chat
 from .distill_cmd import distill_persona
 from .export_cmd import export_buzz, export_pack
 from .blindtest_cmd import run_blindtest
-from ..core.distill import load_config
+from ..core.distill import load_config, resolve_config_path
 from ..core.llm import LLMError
 
 app = typer.Typer(
@@ -35,6 +35,10 @@ def init_cmd(config_path: str = typer.Option(".alchemy-hive/config.toml", "--con
     p = Path(config_path)
     if p.exists():
         typer.echo(f"[init] 配置已存在：{p}（无需重新生成）")
+        return
+    resolved = Path(resolve_config_path(config_path))
+    if resolved.exists():
+        typer.echo(f"[init] 配置已存在：{resolved}（无需重新生成）")
         return
     example = p.with_name("config.toml.example")
     if not example.exists():
@@ -66,7 +70,7 @@ def distill_cmd(
     fix: str = typer.Option(None, "--fix", help="纠正：如 '他不会这样，他其实很细心'（叠加到校正记录）"),
 ):
     """蒸馏 PersonaDoc + persona skill（支持手动画像与交互校正）。"""
-    _run_command(distill_persona, name, workdir, load_config(config_path), profile, fix)
+    _run_command(distill_persona, name, workdir, load_config(resolve_config_path(config_path)), profile, fix)
 
 @app.command("export")
 def export_cmd(
@@ -96,15 +100,17 @@ def blindtest_cmd(
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
     config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
     n: int = typer.Option(5, "--n", help="抽样片段数"),
+    self_aliases: str = typer.Option("", "--self", help="你在对话里的昵称（逗号分隔，无方向标记的导出需要）"),
 ):
     """盲测对拍：真实回复 vs agent 接话，人工评分。"""
-    _run_command(run_blindtest, name, workdir, load_config(config_path), n)
+    aliases = [a.strip() for a in self_aliases.split(",") if a.strip()] or None
+    _run_command(run_blindtest, name, workdir, load_config(resolve_config_path(config_path)), n, aliases)
 
 @app.command("doctor")
 def doctor_cmd(config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件路径")):
     """检查配置与端点连通性（GET /models，不发 LLM 请求、不消耗 token）。"""
     from ..core.health import run_doctor
-    for line in run_doctor(config_path):
+    for line in run_doctor(resolve_config_path(config_path)):
         typer.echo(line)
 
 
@@ -114,11 +120,12 @@ def buzz_import_cmd(
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
     channel: str = typer.Option(None, "--channel", help="buzz 频道 UUID（不填则读配置 [buzz]）"),
     config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
+    lang: str = typer.Option("zh", "--lang", help="输出语言：zh/en"),
 ):
     """一键导入 buzz：打开导出文件夹 + 复制路径；配置齐全时用 buzz-cli 直连建号。高容错，不填名称自动导入全部。"""
     from ..buzz.importing import import_to_buzz, _load_buzz_config
-    bz = _load_buzz_config(config_path)
-    for line in import_to_buzz(name, workdir, channel or bz["channel"], bz["relay_url"]):
+    bz = _load_buzz_config(resolve_config_path(config_path))
+    for line in import_to_buzz(name, workdir, channel or bz["channel"], bz["relay_url"], lang=lang if lang in ("zh", "en") else "zh"):
         typer.echo(line)
 
 
@@ -130,7 +137,7 @@ def buzz_setup_cmd(
 ):
     """开发者引导：检查 buzz-cli/密钥/relay，配置直连建号，把 channel 存进 [buzz] 配置。"""
     from ..buzz.importing import buzz_setup
-    for line in buzz_setup(config_path, channel, relay):
+    for line in buzz_setup(resolve_config_path(config_path), channel, relay):
         typer.echo(line)
 
 
