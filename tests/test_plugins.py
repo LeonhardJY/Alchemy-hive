@@ -96,3 +96,21 @@ def test_buzz_exporter(tmp_path):
     snap = json.loads(open(p, encoding="utf-8").read())
     assert snap["format"] == "buzz-agent-snapshot"
     assert snap["definition"]["name"] == "小明"
+
+# ---- SillyTavern exporter ----
+
+def test_sillytavern_exporter(tmp_path):
+    from alchemy_hive.exporters.sillytavern import SillyTavernExporter
+    doc = _make_doc(system_prompt="你是小明，一个活泼的朋友。")
+    doc.memory = [{"slug": "core", "body": "一起吃饭", "trigger": "约饭", "significance": "友谊的起点"}]
+    doc.signature_phrases = ["蛤", "是了"]
+    doc.expression_rules = ["一次只说一句话"]
+    p = SillyTavernExporter().export(doc, str(tmp_path))
+    assert p.endswith(".sillytavern.json")
+    card = json.loads(open(p, encoding="utf-8").read())
+    assert card["spec"] == "chara_card_v2"
+    assert card["spec_version"] == "2.0"
+    assert card["data"]["name"] == "小明"
+    assert card["data"]["system_prompt"] == "你是小明，一个活泼的朋友。"
+    assert len(card["data"]["character_book"]["entries"]) == 1
+    assert card["data"]["character_book"]["entries"][0]["keys"] == ["约饭"]
