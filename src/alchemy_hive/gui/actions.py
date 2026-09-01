@@ -22,7 +22,7 @@ _L = {
         "memory_skipped": "[提醒] 已省略 {n} 条共同记忆（记忆为明文、含真实内容，默认不含；如需导出请勾选「导出共同记忆」）",
         "export_written": "[export] 已生成 {path}",
         "privacy": "[提醒] 产物含真实聊天内容，分享到 GitHub/他人前请自行脱敏。",
-        "empty_error": "解析出 0 条消息，请确认文件是支持的导出格式（微信/Telegram/WhatsApp/Instagram/Facebook 的 JSON 或 txt）",
+        "empty_error": "解析出 0 条消息，请确认文件是支持的导出格式（微信/Telegram/WhatsApp/Discord/Slack/iMessage/QQ/Instagram/Facebook 的 JSON、txt 或 CSV）",
     },
     "en": {
         "parsed": "[import] Parsed {n} messages",
@@ -36,7 +36,7 @@ _L = {
         "memory_skipped": "[Reminder] Skipped {n} shared memories (plaintext & personal — hidden by default; tick “Export memories” to include)",
         "export_written": "[export] Generated {path}",
         "privacy": "[Reminder] Output contains real chat content — sanitize before sharing.",
-        "empty_error": "Parsed 0 messages — check the file is a supported export (WeChat/Telegram/WhatsApp/Instagram/Facebook JSON or txt)",
+        "empty_error": "Parsed 0 messages — check the file is a supported export (WeChat/Telegram/WhatsApp/Discord/Slack/iMessage/QQ/Instagram/Facebook JSON, txt, or CSV)",
     },
 }
 

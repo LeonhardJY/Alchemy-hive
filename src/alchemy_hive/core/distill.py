@@ -36,6 +36,8 @@ def resolve_config_path(path: str | None = None) -> str:
 
 def load_config(path: str | None) -> dict:
     """读 toml 配置；无文件返回空 dict。支持 .alchemy-hive/config.toml。"""
+    import logging
+    _log = logging.getLogger("alchemy_hive")
     if not path:
         return {}
     try:
@@ -44,6 +46,7 @@ def load_config(path: str | None) -> dict:
         try:
             import tomli as tomllib  # py3.10 兼容
         except ModuleNotFoundError:
+            _log.warning("config: tomllib/tomli 均不可用，跳过配置加载")
             return {}
     p = Path(path)
     if not p.exists():
@@ -51,7 +54,8 @@ def load_config(path: str | None) -> dict:
     try:
         with p.open("rb") as f:
             return tomllib.load(f)
-    except Exception:
+    except Exception as e:
+        _log.warning("config: 解析 %s 失败: %s", path, e)
         return {}
 
 
@@ -142,7 +146,7 @@ def _chat(config: dict, messages: list[dict], *, temperature: float, json_mode: 
         try:
             return chat_completion(config, messages, temperature=temperature, json_mode=json_mode, max_retries=1, timeout=timeout, **kwargs)
         except LLMError as e:
-            if "超时" in str(e) or "无法连接" in str(e):
+            if getattr(e, "error_type", "") in ("timeout", "connect"):
                 raise
             last_error = e
             continue
@@ -282,7 +286,7 @@ def distill(messages: list[Message], name: str, config: dict, manual_profile: st
 
 def distill_incremental(messages: list[Message], name: str, config: dict,
                         existing_doc: PersonaDoc, manual_profile: str = "",
-                        corrections: list[str] | None = None) -> PersonaDoc:
+                        corrections: list[str] | None = None, workdir: str = "") -> PersonaDoc:
     """增量蒸馏：基于已有 persona + 新消息，合并分析结果。
 
     策略：
@@ -299,7 +303,7 @@ def distill_incremental(messages: list[Message], name: str, config: dict,
         raise DistillError("未配置模型 API key")
 
     # 从已有 persona 提取最后时间戳
-    last_ts = _extract_last_timestamp(existing_doc)
+    last_ts = _extract_last_timestamp(existing_doc, workdir=workdir, name=name)
     if last_ts:
         new_msgs = [m for m in messages if m.timestamp and m.timestamp > last_ts]
     else:
@@ -394,14 +398,28 @@ def distill_incremental(messages: list[Message], name: str, config: dict,
     return doc
 
 
-def _extract_last_timestamp(doc: PersonaDoc) -> str | None:
-    """从 persona 的 memories 提取最晚的时间戳（用于增量蒸馏的消息过滤）。"""
+def _extract_last_timestamp(doc: PersonaDoc, workdir: str = "", name: str = "") -> str | None:
+    """提取最后处理时间戳：优先从 parsed JSON 的最后一条消息取，回退到记忆文本正则。"""
+    # 优先方案：从 parsed messages 文件取最后时间戳（最可靠）
+    if workdir and name:
+        from .safe import safe_filename
+        parsed_path = Path(workdir) / "parsed" / f"{safe_filename(name)}.json"
+        if parsed_path.exists():
+            try:
+                msgs_data = json.loads(parsed_path.read_text(encoding="utf-8"))
+                if isinstance(msgs_data, list) and msgs_data:
+                    last = msgs_data[-1]
+                    ts = last.get("timestamp", "")
+                    if ts and len(ts) >= 10:
+                        return ts[:19]  # 截取 YYYY-MM-DD HH:MM:SS
+            except Exception:
+                pass
+    # 回退：从记忆文本正则提取（不可靠，但兜底）
+    import re
     last_ts = ""
     for m in doc.memory:
         if isinstance(m, dict):
             body = m.get("body", "")
-            # 尝试从 body 中提取时间戳（格式：YYYY-MM-DD）
-            import re
             match = re.search(r"(\d{4}-\d{2}-\d{2})", body)
             if match and match.group(1) > last_ts:
                 last_ts = match.group(1)
@@ -426,35 +444,43 @@ def _build_persona_summary(doc: PersonaDoc) -> str:
 
 
 def _merge_analysis(existing_doc: PersonaDoc, new_analysis: dict, name: str) -> dict:
-    """合并新旧分析结果。"""
+    """合并新旧分析结果。带上限防止无限膨胀。"""
+    _MAX_MEMORIES = 60
+    _MAX_RULES = 30
+    _MAX_PHRASES = 20
+    _MAX_REPLIES_SCENES = 15
+
     merged = dict(new_analysis)
     merged["name"] = name
     merged.setdefault("display_name", name)
 
-    # 合并 memories：追加新记忆，去重旧记忆
-    old_memories = existing_doc.memory or []
+    # 合并 memories：追加新记忆，去重旧记忆，带上限
+    old_memories = list(existing_doc.memory or [])
     new_memories = new_analysis.get("memories") or []
     seen_slugs = {m.get("slug") for m in old_memories if isinstance(m, dict)}
     for m in new_memories:
         if isinstance(m, dict) and m.get("slug") not in seen_slugs:
             old_memories.append(m)
             seen_slugs.add(m.get("slug"))
-    merged["memories"] = old_memories
+    merged["memories"] = old_memories[-_MAX_MEMORIES:]  # 保留最近的
 
-    # 合并 expression_rules：追加新规则
-    old_rules = existing_doc.expression_rules or []
+    # 合并 expression_rules：追加新规则，带上限
+    old_rules = list(existing_doc.expression_rules or [])
     new_rules = new_analysis.get("expression_rules") or []
-    merged["expression_rules"] = old_rules + [r for r in new_rules if r not in old_rules]
+    merged["expression_rules"] = (old_rules + [r for r in new_rules if r not in old_rules])[-_MAX_RULES:]
 
-    # 合并 signature_phrases：合并去重
+    # 合并 signature_phrases：合并去重，带上限
     old_phrases = set(existing_doc.signature_phrases or [])
     new_phrases = new_analysis.get("signature_phrases") or []
-    merged["signature_phrases"] = list(old_phrases | set(new_phrases))
+    merged["signature_phrases"] = list(old_phrases | set(new_phrases))[-_MAX_PHRASES:]
 
-    # example_replies：追加新场景，覆盖旧场景
+    # example_replies：追加新场景，覆盖旧场景，带上限
     old_replies = dict(existing_doc.example_replies or {})
     new_replies = new_analysis.get("example_replies") or {}
     old_replies.update(new_replies)
+    # 截断到上限
+    if len(old_replies) > _MAX_REPLIES_SCENES:
+        old_replies = dict(list(old_replies.items())[-_MAX_REPLIES_SCENES:])
     merged["example_replies"] = old_replies
 
     # 保留旧的 relationship 信息（如果新分析没有提供）

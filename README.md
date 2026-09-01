@@ -27,7 +27,11 @@ your chat file ──→ parser ──→ two-stage LLM distillation ──→ .
   (WeChat /           detect platform,          analyze + build:            import & chat
   Telegram /          normalize time,            structured analysis →
   WhatsApp /          filter media)              400+ line persona
-  Instagram /                                     with real quotes
+  Discord /                                      with real quotes
+  Slack /
+  iMessage /
+  QQ /
+  Instagram /
   Facebook)
 ```
 
@@ -46,6 +50,7 @@ your chat file ──→ parser ──→ two-stage LLM distillation ──→ .
 ```bash
 pip install alchemy-hive
 alchemy-hive init    # creates .alchemy-hive/config.toml — fill in your API key
+alchemy-hive doctor  # verify config & endpoint connectivity
 ```
 
 Or install from source:
@@ -54,6 +59,7 @@ Or install from source:
 git clone https://github.com/LeonhardJY/Alchemy-hive && cd Alchemy-hive
 pip install -e .
 alchemy-hive init
+alchemy-hive doctor
 ```
 
 ### Run the GUI
@@ -74,13 +80,13 @@ alchemy-hive evaluate --name 小明      # auto-score quality (LLM-as-judge)
 
 ```bash
 # 1. Import chat log
-alchemy-hive import chat.txt --name 小明 --self 我
+alchemy-hive import chat.txt --name 小明 --self 我 --source auto
 
 # 2. Distill persona
 alchemy-hive distill --name 小明 --profile "INTJ 爱吐槽 重感情"
 
 # 3. Export for buzz
-alchemy-hive export --name 小明
+alchemy-hive export --name 小明 --format buzz
 
 # 4. Import into buzz
 alchemy-hive buzz-import --name 小明
@@ -94,6 +100,10 @@ alchemy-hive buzz-import --name 小明
 | **WeChat** | WeChat desktop → backup → txt | txt |
 | **Telegram** | Desktop app → Settings → Advanced → Export | JSON |
 | **WhatsApp** | Phone → Settings → Chats → Export chat | txt |
+| **Discord** | DiscordChatExporter → CSV/JSON export | JSON |
+| **Slack** | Workspace Settings → Import/Export Data | JSON |
+| **iMessage** | iExplorer or iMazing → export chat → CSV | CSV/TXT |
+| **QQ** | QQMsgExport or similar tool → JSON export | JSON |
 | **Instagram** | Settings → Privacy → Download your information | JSON |
 | **Facebook** | Settings → Your Facebook Information → Download | JSON |
 
@@ -112,11 +122,13 @@ Detailed export instructions: [English](docs/WEFLOW_EXPORT_EN.md) · [中文](do
 
 ## Features
 
-- **6 platforms** — WeChat (WeFlow JSON + txt), Telegram, WhatsApp, Instagram/Facebook, generic JSON/txt
+- **10 platforms** — WeChat (WeFlow JSON + txt), Telegram, WhatsApp, Discord, Slack, iMessage (CSV/TXT), QQ, Instagram/Facebook, generic JSON/txt
 - **Auto-detection** — samples 64KB to identify platform; falls back to field probing
 - **Two-stage distillation** — structured analysis → long-form persona with real quotes
+- **Incremental distillation** — `--incremental` merges new messages into existing persona
 - **Plugin architecture** — source adapters + exporter adapters; add new platforms with one file
-- **Multi-format export** — system prompt (.txt), buzz (.agent.json), extensible to SillyTavern/LobeChat
+- **Multi-format export** — system prompt (.txt), buzz (.agent.json), SillyTavern (character card V2), extensible
+- **CSV support** — iMessage CSV exports parsed natively; parser accepts JSON/txt/CSV
 - **Chat playground** — talk to your persona right in the app, no export needed
 - **Auto-evaluation** — LLM-as-judge scores authenticity, consistency, expression, emotional depth
 - **Blindtest** — quantify "how close it feels" with human ratings
@@ -131,14 +143,16 @@ Detailed export instructions: [English](docs/WEFLOW_EXPORT_EN.md) · [中文](do
 |---------|-------------|
 | `alchemy-hive gui` | Launch desktop GUI |
 | `alchemy-hive init` | Generate config template |
+| `alchemy-hive doctor` | Check config & connectivity (no LLM calls) |
 | `alchemy-hive import <file> --name X` | Parse chat → structured messages |
 | `alchemy-hive distill --name X` | Distill persona |
+| `alchemy-hive distill --name X --incremental` | Merge new messages into existing persona |
 | `alchemy-hive export --name X --format text/buzz/all` | Export persona (multi-format) |
+| `alchemy-hive export-all --name X` | Export all formats at once |
 | `alchemy-hive chat --name X` | Chat with the persona |
 | `alchemy-hive evaluate --name X` | Auto-score quality (LLM-as-judge) |
 | `alchemy-hive blindtest --name X` | Rate agent similarity (1-5) |
 | `alchemy-hive pack --names A,B` | Multi-agent community packaging |
-| `alchemy-hive doctor` | Check config & connectivity |
 | `alchemy-hive buzz-import` | Import into buzz |
 
 ## Configuration

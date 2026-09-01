@@ -67,7 +67,7 @@ def distill_persona(name: str, workdir: str, config: dict | str | None,
     if incremental and existing_doc:
         typer.echo(f"[distill] 增量模式：基于已有 persona 合并新消息")
         doc = distill_incremental(msgs, name, cfg, existing_doc,
-                                  manual_profile=manual, corrections=corrections)
+                                  manual_profile=manual, corrections=corrections, workdir=workdir)
     else:
         doc = distill(msgs, name, cfg, manual_profile=manual, corrections=corrections)
 

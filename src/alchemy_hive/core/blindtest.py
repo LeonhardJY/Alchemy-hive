@@ -1,8 +1,7 @@
 """盲测对拍：从真实聊天抽样片段，让 agent 接话，人工评分验证蒸馏质量。"""
-from .models import Message
+from .models import Message, SELF_ALIASES
 from .distill import DistillError
 from .llm import chat_completion, LLMError
-from .parser import _SELF_ALIASES
 
 
 def extract_pairs(messages: list[Message], n: int, context_len: int = 3,
@@ -14,7 +13,7 @@ def extract_pairs(messages: list[Message], n: int, context_len: int = 3,
 
     self_aliases：你在对话里的昵称列表（来自 --self），与默认的 me/self/我 合并。
     """
-    aliases = {a.lower() for a in list(_SELF_ALIASES) + list(self_aliases or [])}
+    aliases = {a.lower() for a in list(SELF_ALIASES) + list(self_aliases or [])}
     pairs: list[dict] = []
     for i, m in enumerate(messages):
         if m.sender.lower() in aliases:

@@ -21,6 +21,7 @@ import webview
 from .actions import run_pipeline
 from ..core.parser import parse_messages, detect_source, SOURCE_LABELS
 from ..core.safe import safe_filename
+from ..core.distill import load_config, resolve_config_path
 from ..buzz.importing import import_to_buzz
 
 # 模块级窗口引用：绝不能挂在 js_api 实例上。pywebview 会用 dir()/getattr() 递归枚举
@@ -62,8 +63,8 @@ _EN_HTML = {
     "微信（WeFlow 导出）": "WeChat (via WeFlow)",
     "微信 txt": "WeChat txt",
     "其他（通用字段解析）": "Other (generic)",
-    "把聊天文件拖到这里（微信 / Telegram / WhatsApp / Instagram / Facebook 导出）":
-        "Drop your chat file here (WeChat / Telegram / WhatsApp / Instagram / Facebook export)",
+    "把聊天文件拖到这里（微信 / Telegram / WhatsApp / Instagram / Facebook / Discord / Slack / iMessage / QQ 导出）":
+        "Drop your chat file here (WeChat / Telegram / WhatsApp / Instagram / Facebook / Discord / Slack / iMessage / QQ export)",
     "浏览文件…": "Browse…",
     "Ta 的名称（如：小明）": "Their name (e.g. Xiaoming)",
     "你的昵称（可选）：对话里你的名字，用于区分方向（如：我 / 张三）":
@@ -512,10 +513,14 @@ _HTML = """<!DOCTYPE html>
       <option value="whatsapp">WhatsApp</option>
       <option value="meta">Instagram / Facebook</option>
       <option value="generic">其他（通用字段解析）</option>
+      <option value="discord">Discord</option>
+      <option value="slack">Slack</option>
+      <option value="imessage">iMessage</option>
+      <option value="qq">QQ</option>
     </select>
     <div class="dropzone" id="dropzone"
          ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
-      <div id="drop_hint">把聊天文件拖到这里（微信 / Telegram / WhatsApp / Instagram / Facebook 导出）</div>
+      <div id="drop_hint">把聊天文件拖到这里（微信 / Telegram / WhatsApp / Instagram / Facebook / Discord / Slack / iMessage / QQ 导出）</div>
       <div class="row" style="justify-content:center; margin-top:12px;">
         <button class="ghost" onclick="pick()">浏览文件…</button>
       </div>
@@ -755,7 +760,7 @@ _HTML = """<!DOCTYPE html>
   /* ---- 来源平台：切换后重新识别；无方向标记的平台提示填昵称 ---- */
   function onSource() {
     var s = el("source").value;
-    var needSelf = (s === "telegram" || s === "whatsapp" || s === "meta" || s === "generic");
+    var needSelf = (s === "telegram" || s === "whatsapp" || s === "meta" || s === "generic" || s === "discord" || s === "slack" || s === "imessage" || s === "qq");
     el("self_name").placeholder = needSelf ? T.self_required : T.self_optional;
     if (el("chat").value.trim()) inspectChat();   // 已有文件 → 按新平台重识别
   }
@@ -1105,14 +1110,16 @@ class Api:
             doc = PersonaDoc.model_validate(json.loads(persona_path.read_text(encoding="utf-8")))
             export_dir = _gui_workdir() / "export"
             export_dir.mkdir(parents=True, exist_ok=True)
+            # 记忆导出：从 persona JSON 判断（with_memory 在 distill 时已决定）
+            include_memory = bool(doc.memory)
             if fmt == "all":
-                paths = _export_all(doc, str(export_dir))
+                paths = _export_all(doc, str(export_dir), include_memory=include_memory)
             else:
                 from ..core.plugins import get_exporter
                 adapter = get_exporter(fmt)
                 if not adapter:
                     return {"ok": False, "error": f"未知格式: {fmt}"}
-                p = adapter.export(doc, str(export_dir))
+                p = adapter.export(doc, str(export_dir), include_memory=include_memory)
                 paths = [p] if p else []
             return {"ok": True, "paths": paths}
         except Exception as e:

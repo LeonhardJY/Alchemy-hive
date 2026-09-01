@@ -27,7 +27,11 @@
   (微信 /           识别平台、           分析 + 撰写：            导入后
   Telegram /        归一化时间、         结构化分析 →             直接开聊
   WhatsApp /        过滤媒体)           400+ 行角色画像
-  Instagram /                            带真实原话)
+  Discord /                              带真实原话)
+  Slack /
+  iMessage /
+  QQ /
+  Instagram /
   Facebook)
 ```
 
@@ -46,6 +50,7 @@
 ```bash
 pip install alchemy-hive
 alchemy-hive init    # 生成 .alchemy-hive/config.toml，填入你的 API key
+alchemy-hive doctor  # 检查配置和端点连通性
 ```
 
 或从源码安装：
@@ -54,6 +59,7 @@ alchemy-hive init    # 生成 .alchemy-hive/config.toml，填入你的 API key
 git clone https://github.com/LeonhardJY/Alchemy-hive && cd Alchemy-hive
 pip install -e .
 alchemy-hive init
+alchemy-hive doctor
 ```
 
 ### 启动图形界面
@@ -67,13 +73,13 @@ alchemy-hive gui --lang en    # 英文界面
 
 ```bash
 # 1. 导入聊天记录
-alchemy-hive import chat.txt --name 小明 --self 我
+alchemy-hive import chat.txt --name 小明 --self 我 --source auto
 
 # 2. 蒸馏画像
 alchemy-hive distill --name 小明 --profile "INTJ 爱吐槽 重感情"
 
 # 3. 导出给 buzz
-alchemy-hive export --name 小明
+alchemy-hive export --name 小明 --format buzz
 
 # 4. 导入 buzz
 alchemy-hive buzz-import --name 小明
@@ -87,6 +93,10 @@ alchemy-hive buzz-import --name 小明
 | **微信** | 微信电脑端 → 备份 → txt | txt |
 | **Telegram** | 桌面端 → 设置 → 高级 → 导出 | JSON |
 | **WhatsApp** | 手机 → 设置 → 聊天 → 导出聊天 | txt |
+| **Discord** | DiscordChatExporter 导出聊天 → CSV/JSON | JSON |
+| **Slack** | 工作区设置 → 导入/导出数据 | JSON |
+| **iMessage** | iExplorer 或 iMazing → 导出聊天 → CSV | CSV/TXT |
+| **QQ** | QQMsgExport 或类似工具 → JSON 导出 | JSON |
 | **Instagram** | 设置 → 隐私 → 下载你的信息 | JSON |
 | **Facebook** | 设置 → 你的 Facebook 信息 → 下载 | JSON |
 
@@ -105,9 +115,13 @@ alchemy-hive buzz-import --name 小明
 
 ## 功能特点
 
-- **6 大平台**——微信（WeFlow JSON + txt）、Telegram、WhatsApp、Instagram/Facebook、通用 JSON/txt
+- **10 大平台**——微信（WeFlow JSON + txt）、Telegram、WhatsApp、Discord、Slack、iMessage（CSV/TXT）、QQ、Instagram/Facebook、通用 JSON/txt
 - **自动识别**——采样 64KB 识别平台；失败后回退字段探测
 - **两阶段蒸馏**——结构化分析 → 带真实原话的长画像
+- **增量蒸馏**——`--incremental` 将新消息合并到已有画像
+- **插件架构**——source adapter + exporter adapter；一个文件即可添加新平台
+- **多格式导出**——system prompt（.txt）、buzz（.agent.json）、SillyTavern（角色卡 V2），可扩展
+- **CSV 支持**——iMessage CSV 导出原生解析；解析器接受 JSON/txt/CSV
 - **盲测对拍**——量化「像不像」的人工评分
 - **交互校正**——`--fix` 和 `--profile` 跨次蒸馏迭代优化
 - **图形界面**——pywebview 桌面端，拖拽上传，中英双语
@@ -121,12 +135,16 @@ alchemy-hive buzz-import --name 小明
 |------|------|
 | `alchemy-hive gui` | 启动桌面图形界面 |
 | `alchemy-hive init` | 生成配置模板 |
+| `alchemy-hive doctor` | 检查配置和连通性（不消耗 token） |
 | `alchemy-hive import <文件> --name X` | 解析聊天 → 结构化消息 |
 | `alchemy-hive distill --name X` | 蒸馏画像 |
-| `alchemy-hive export --name X` | 导出 `.agent.json` |
+| `alchemy-hive distill --name X --incremental` | 增量模式：将新消息合并到已有画像 |
+| `alchemy-hive export --name X --format text/buzz/all` | 导出画像（多格式） |
+| `alchemy-hive export-all --name X` | 一键导出所有格式 |
+| `alchemy-hive chat --name X` | 与画像角色聊天 |
+| `alchemy-hive evaluate --name X` | 自动评分（LLM-as-judge） |
 | `alchemy-hive blindtest --name X` | 盲测评分（1-5） |
 | `alchemy-hive pack --names A,B` | 多 agent 社群打包 |
-| `alchemy-hive doctor` | 检查配置和连通性 |
 | `alchemy-hive buzz-import` | 导入 buzz |
 
 ## 配置

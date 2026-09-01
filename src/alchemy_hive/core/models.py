@@ -1,6 +1,9 @@
 """中立数据模型：解析与蒸馏共用，不依赖任何平台。"""
 from pydantic import BaseModel
 
+# 发送方向默认别名：me/self/我（所有平台通用）
+SELF_ALIASES = ("我", "self", "me")
+
 
 class Message(BaseModel):
     """一条聊天消息。"""

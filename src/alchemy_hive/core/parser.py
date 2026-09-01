@@ -8,7 +8,10 @@ import re
 import time
 from pathlib import Path
 
-from .models import Message
+from .models import Message, SELF_ALIASES
+
+# 向后兼容别名（内部使用）
+_SELF_ALIASES = SELF_ALIASES
 
 # 平台标识 → 中文名（GUI 下拉与识别结果显示共用）
 SOURCE_LABELS = {
@@ -345,7 +348,7 @@ def _parse_imessage_txt(path: Path) -> list[Message]:
 def _parse_imessage_date(s: str) -> str:
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
-            return time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(s[:19], fmt[:len(fmt)]))
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(s.strip(), fmt))
         except (ValueError, OverflowError):
             continue
     return s
