@@ -5,11 +5,13 @@ from .import_cmd import import_chat
 from .distill_cmd import distill_persona
 from .export_cmd import export_buzz, export_pack
 from .blindtest_cmd import run_blindtest
+from .chat_cmd import run_chat
+from .evaluate_cmd import run_evaluate
 from ..core.distill import load_config, resolve_config_path
 from ..core.llm import LLMError
 
 app = typer.Typer(
-    help="alchemy-hive: 从微信聊天记录蒸馏人物 AI agent，导出 buzz 快照。",
+    help="alchemy-hive: 任意聊天源 → 任意 agent 平台的蒸馏中转站。",
     no_args_is_help=True,
     pretty_exceptions_enable=False,  # 用户命令行不渲染巨型 rich traceback（红线：不裸 traceback）
 )
@@ -77,9 +79,10 @@ def export_cmd(
     name: str = typer.Option(..., "--name", help="人物名"),
     workdir: str = typer.Option("build", "--workdir", help="工作目录"),
     with_memory: bool = typer.Option(False, "--with-memory", help="导出共同记忆（明文、含真实内容）"),
+    fmt: str = typer.Option("buzz", "--format", help="导出格式：text/buzz/all"),
 ):
-    """导出 buzz .agent.json 快照。"""
-    _run_command(export_buzz, name, workdir, with_memory)
+    """导出 persona 到指定格式（text: system prompt / buzz: .agent.json / all: 全部）。"""
+    _run_command(export_buzz, name, workdir, with_memory, fmt)
 
 @app.command("pack")
 def pack_cmd(
@@ -139,6 +142,52 @@ def buzz_setup_cmd(
     from ..buzz.importing import buzz_setup
     for line in buzz_setup(resolve_config_path(config_path), channel, relay):
         typer.echo(line)
+
+
+@app.command("chat")
+def chat_cmd(
+    name: str = typer.Option(..., "--name", help="人物名"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
+):
+    """聊天测试：与蒸馏出的 persona 交互式对话，验证效果。"""
+    _run_command(run_chat, name, workdir, load_config(resolve_config_path(config_path)))
+
+
+@app.command("evaluate")
+def evaluate_cmd(
+    name: str = typer.Option(..., "--name", help="人物名"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
+    n: int = typer.Option(10, "--n", help="测试场景数"),
+):
+    """自动评估：LLM-as-judge 评分 persona 质量。"""
+    _run_command(run_evaluate, name, workdir, load_config(resolve_config_path(config_path)), n)
+
+
+@app.command("export-all")
+def export_all_cmd(
+    name: str = typer.Option(..., "--name", help="人物名"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+    with_memory: bool = typer.Option(False, "--with-memory", help="导出共同记忆"),
+):
+    """导出所有格式：system prompt (.txt) + buzz (.agent.json)。"""
+    from ..core.plugins import export_all as _export_all
+    from ..core.models import PersonaDoc
+    from ..core.safe import safe_filename
+    from .. import exporters  # noqa: F401 — 触发 exporter 注册
+    from pathlib import Path
+    import json as _json
+    safe = safe_filename(name)
+    persona_path = Path(workdir) / "persona" / f"{safe}.json"
+    if not persona_path.exists():
+        raise typer.BadParameter(f"未找到 persona {persona_path}，请先运行 distill")
+    doc = PersonaDoc.model_validate(_json.loads(persona_path.read_text(encoding="utf-8")))
+    export_dir = Path(workdir) / "export"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    paths = _export_all(doc, str(export_dir), include_memory=with_memory)
+    for p in paths:
+        typer.echo(f"[export] 已生成 -> {p}")
 
 
 @app.command("gui")
