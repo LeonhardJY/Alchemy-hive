@@ -65,7 +65,8 @@ _L = {
 
 
 def _t(lang: str, key: str, **kw) -> str:
-    return _L.get(lang, _L["zh"])[key].format(**kw)
+    from ..core.i18n import t
+    return t(lang, key, _L, **kw)
 
 
 def _copy_to_clipboard(text: str) -> bool:
