@@ -18,16 +18,17 @@
 
 ## 为什么做这个？
 
-微信聊天、Telegram 对话、WhatsApp 群组——几年的回忆锁在聊天记录里，你可能再也不会翻看。
+微信聊天、Telegram 对话、WhatsApp 群组、Discord 频道、Slack 消息——几年的回忆锁在聊天记录里，你可能再也不会翻看。
 
-**Alchemy Hive** 让你用任意 OpenAI 兼容模型（DeepSeek、通义千问、Kimi、Ollama 等）把这些对话蒸馏成一个鲜活的人物画像。导出成 `.agent.json`，拖进 [buzz](https://github.com/block/buzz) 就能和 TA 聊天——一个属于你的数字回声。
+**Alchemy Hive** 用任意 OpenAI 兼容模型（DeepSeek、通义千问、Kimi、Ollama 等）把这些对话蒸馏成一个鲜活的人物画像。导出到 [buzz](https://github.com/block/buzz)、SillyTavern 或任何支持 system prompt 的平台——一个属于你的数字回声。
 
 ```
-你的聊天文件 ──→ 解析器 ──→ 两阶段 LLM 蒸馏 ──→ .agent.json ──→ buzz
-  (微信 /           识别平台、           分析 + 撰写：            导入后
-  Telegram /        归一化时间、         结构化分析 →             直接开聊
-  WhatsApp /        过滤媒体)           400+ 行角色画像
-  Discord /                              带真实原话)
+你的聊天文件 ──→ 解析器 ──→ 两阶段 LLM 蒸馏 ──→ PersonaDoc ──→ 多格式导出
+  (10 大平台：         识别平台、           分析 + 撰写：            (system prompt
+  微信 /              归一化时间、         结构化分析 →             .txt / buzz
+  Telegram /          过滤媒体)           400+ 行角色画像           .agent.json /
+  WhatsApp /                               带真实原话               SillyTavern)
+  Discord /
   Slack /
   iMessage /
   QQ /

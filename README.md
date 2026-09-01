@@ -18,16 +18,17 @@
 
 ## Why?
 
-WeChat conversations, Telegram threads, WhatsApp groups — years of memories locked in chat logs you'll never re-read.
+WeChat conversations, Telegram threads, WhatsApp groups, Discord chats, Slack messages — years of memories locked in chat logs you'll never re-read.
 
-**Alchemy Hive** lets you distill those conversations into a vivid AI persona using any OpenAI-compatible model (DeepSeek, Qwen, Kimi, Ollama, and more). The result is a `.agent.json` you can drop into [buzz](https://github.com/block/buzz) and start chatting with — a digital echo of someone you care about.
+**Alchemy Hive** distills those conversations into a vivid AI persona using any OpenAI-compatible model (DeepSeek, Qwen, Kimi, Ollama, and more). Export to [buzz](https://github.com/block/buzz), SillyTavern, or any platform that accepts a system prompt — a digital echo of someone you care about.
 
 ```
-your chat file ──→ parser ──→ two-stage LLM distillation ──→ .agent.json ──→ buzz
-  (WeChat /           detect platform,          analyze + build:            import & chat
-  Telegram /          normalize time,            structured analysis →
-  WhatsApp /          filter media)              400+ line persona
-  Discord /                                      with real quotes
+your chat file ──→ parser ──→ two-stage LLM distillation ──→ PersonaDoc ──→ export
+  (10 platforms:        detect platform,          analyze + build:        (system prompt
+  WeChat /             normalize time,            structured analysis →   .txt / buzz
+  Telegram /           filter media)              400+ line persona       .agent.json /
+  WhatsApp /                                      with real quotes        SillyTavern
+  Discord /
   Slack /
   iMessage /
   QQ /
