@@ -139,6 +139,13 @@ _EN_HTML = {
     "自动评分": "Auto-evaluate",
     "蒸馏完成后在这里和 TA 聊天...": "Start chatting after distillation...",
     "导出失败": "Export failed",
+    # 按钮文案
+    "浏览文件…": "Browse...",
+    "开始蒸馏": "Start distillation",
+    "导出": "Export",
+    "发送": "Send",
+    "自动评分": "Auto-evaluate",
+    "导入到 buzz · 打开文件夹并复制路径": "Import to buzz · open folder & copy path",
     "聊天测试 · 直接和蒸馏出的 persona 对话": "Chat · Talk to the distilled persona directly",
 }
 
@@ -996,12 +1003,9 @@ class Api:
         self._lang_lock = threading.Lock()  # 保护 lang / _pending_state 跨线程访问
 
     def set_lang(self, lang: str, state: str = "") -> bool:
-        """切换界面语言。state 为 JS 采集的表单状态 JSON，重载后恢复（切换不再清空输入）。
-
-        不能同步 load_html：那会销毁 pywebview 的回调表（_returnValuesCallbacks），
-        本 js_api 调用返回时就无法投递结果 → TypeError。改为更新语言后延迟重载，
-        让返回值先送达旧页面。
-        """
+        """切换界面语言。state 为 JS 采集的表单状态 JSON，重载后恢复。"""
+        import logging
+        _log = logging.getLogger("alchemy_hive.gui")
         lang = lang if lang in ("zh", "en") else "zh"
         try:
             obj = json.loads(state) if state else None
@@ -1012,24 +1016,70 @@ class Api:
             self._pending_state = pending
             if lang != self.lang:
                 self.lang = lang
+                _log.info("lang switch: %s → %s, scheduling reload", "zh" if lang == "en" else "en", lang)
                 threading.Timer(0.15, self._apply_lang).start()
+            else:
+                _log.debug("lang switch: already %s, skipping", lang)
         return True
 
     def _apply_lang(self) -> None:
+        """应用语言切换：先尝试 load_html（完整重载），失败则用 evaluate_js 逐字段更新。"""
+        import logging
+        _log = logging.getLogger("alchemy_hive.gui")
         try:
             with self._lang_lock:
                 current_lang = self.lang
                 state = self._pending_state
+            html = _build_html(current_lang, state)
             if _GUI_WINDOW is not None:
-                _GUI_WINDOW.load_html(_build_html(current_lang, state))
-        except Exception:
-            pass  # 竞态容错：返回值回调已尽力先送达
+                try:
+                    _GUI_WINDOW.load_html(html)
+                    _log.debug("lang switch: load_html succeeded")
+                except Exception as e:
+                    _log.warning("lang switch: load_html failed (%s), trying evaluate_js fallback", e)
+                    self._apply_lang_js_fallback(current_lang)
+        except Exception as e:
+            _log.warning("lang switch: %s", e)
         try:
-            # 标题随语言切换；单独容错：失败不影响界面重载本身（部分后端需在主线程调）
             if _GUI_WINDOW is not None:
-                _GUI_WINDOW.set_title(_GUI_TITLES[current_lang])
+                _GUI_WINDOW.set_title(_GUI_TITLES.get(current_lang, _GUI_TITLES["zh"]))
         except Exception:
             pass
+
+    def _apply_lang_js_fallback(self, lang: str) -> None:
+        """load_html 失败时的 JS 回退：逐个更新可见文案。"""
+        if _GUI_WINDOW is None:
+            return
+        import re as _re
+        html = _build_html(lang)
+        # 从新 HTML 提取关键元素的文本
+        replacements = {
+            "#go_text": _re.search(r'id="go_text">([^<]+)<', html),
+            "#key_toggle": None,  # 由 T 控制
+        }
+        for selector, match in replacements.items():
+            if match:
+                text = match.group(1)
+                try:
+                    _GUI_WINDOW.evaluate_js(f'document.querySelector("{selector}").textContent = {json.dumps(text)}; true')
+                except Exception:
+                    pass
+        # 更新 T 对象
+        t_data = _T.get(lang, _T["zh"])
+        try:
+            _GUI_WINDOW.evaluate_js(f"window.T = {json.dumps(t_data, ensure_ascii=False)}; true")
+        except Exception:
+            pass
+        # 更新按钮文案
+        button_map = {
+            "go_text": "开始蒸馏" if lang == "zh" else "Start distillation",
+            "key_toggle": t_data.get("show_key", "显示"),
+        }
+        for elem_id, text in button_map.items():
+            try:
+                _GUI_WINDOW.evaluate_js(f'document.getElementById("{elem_id}").textContent = {json.dumps(text)}; true')
+            except Exception:
+                pass
 
     def open_file(self) -> str:
         try:
