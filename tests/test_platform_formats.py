@@ -270,3 +270,109 @@ def test_gb18030_encoding_fallback(tmp_path):
     msgs = parse_messages(str(p))
     assert len(msgs) == 1
     assert "嘢" in msgs[0].content
+
+# ---------- Discord ----------
+
+def _discord(messages):
+    return json.dumps({"guild": {"name": "Test"}, "channel": {"name": "general"}, "messages": messages}, ensure_ascii=False)
+
+def _discord_msg(**kw):
+    base = {"id": "1", "type": "Default", "author": {"id": "u1", "name": "Alice"}, "content": "你好", "timestamp": "2024-01-15T10:30:00.000000+00:00"}
+    base.update(kw)
+    return base
+
+def test_discord_basic(tmp_path):
+    path = _write(tmp_path, "dc.json", _discord([
+        _discord_msg(),
+        _discord_msg(id="2", author={"id": "u2", "name": "Bob"}, content="嗨"),
+    ]))
+    assert detect_source(path) == "discord"
+    msgs = parse_messages(path)
+    assert len(msgs) == 2
+    assert msgs[0].sender == "Alice"
+
+def test_discord_self_aliases(tmp_path):
+    path = _write(tmp_path, "dc.json", _discord([
+        _discord_msg(author={"id": "u1", "name": "Alice"}),
+        _discord_msg(id="2", author={"id": "u2", "name": "Bob"}),
+    ]))
+    msgs = parse_messages(path, self_aliases=["Alice"])
+    assert msgs[0].sender == "我"
+
+def test_discord_system_messages_skipped(tmp_path):
+    path = _write(tmp_path, "dc.json", _discord([
+        _discord_msg(),
+        _discord_msg(id="2", type="ChannelFollowAddMessage", content="system"),
+        _discord_msg(id="3", content=""),
+    ]))
+    msgs = parse_messages(path)
+    assert len(msgs) == 1
+
+# ---------- Slack ----------
+
+def _slack(messages):
+    return json.dumps(messages, ensure_ascii=False)
+
+def test_slack_basic(tmp_path):
+    path = _write(tmp_path, "sl.json", _slack([
+        {"type": "message", "user": "U1", "text": "hello", "ts": "1705312200.000100"},
+        {"type": "message", "user": "U2", "text": "world", "ts": "1705312260.000100"},
+    ]))
+    assert detect_source(path) == "slack"
+    msgs = parse_messages(path)
+    assert len(msgs) == 2
+    assert msgs[0].content == "hello"
+
+def test_slack_with_users_json(tmp_path):
+    users = json.dumps([{"id": "U1", "name": "Alice"}, {"id": "U2", "name": "Bob"}])
+    _write(tmp_path, "users.json", users)
+    path = _write(tmp_path, "general.json", _slack([
+        {"type": "message", "user": "U1", "text": "hi", "ts": "1705312200.000100"},
+    ]))
+    msgs = parse_messages(path)
+    assert msgs[0].sender == "Alice"
+
+# ---------- QQ ----------
+
+def _qq(messages):
+    return json.dumps(messages, ensure_ascii=False)
+
+def test_qq_basic(tmp_path):
+    path = _write(tmp_path, "qq.json", _qq([
+        {"sender": {"user_id": "1001", "nickname": "小明"}, "content": {"text": "在吗"}, "time": 1705312200},
+        {"sender": {"user_id": "1002", "nickname": "小红"}, "content": {"text": "在"}, "time": 1705312260},
+    ]))
+    assert detect_source(path) == "qq"
+    msgs = parse_messages(path)
+    assert len(msgs) == 2
+    assert msgs[0].sender == "小明"
+    assert msgs[0].content == "在吗"
+
+def test_qq_message_list_field(tmp_path):
+    path = _write(tmp_path, "qq.json", _qq([
+        {"sender": {"user_id": "u1", "nickname": "A"}, "message": [{"type": "text", "text": "hello"}, {"type": "face", "id": 123}], "time": 1705312200},
+    ]))
+    msgs = parse_messages(path)
+    assert msgs[0].content == "hello"
+
+# ---------- iMessage ----------
+
+def test_imessage_csv(tmp_path):
+    csv_content = "handle,text,date,is_from_me\nAlice,hello,2024-01-15 10:30:00,0\nBob,world,2024-01-15 10:31:00,1\n"
+    path = _write(tmp_path, "im.csv", csv_content)
+    assert detect_source(path) == "imessage"
+    msgs = parse_messages(path)
+    assert len(msgs) == 2
+    assert msgs[0].sender == "Alice"
+    assert msgs[1].sender == "我"
+
+
+def test_imessage_txt(tmp_path):
+    txt_content = "2024-01-15 10:30:00 Alice: hello\n2024-01-15 10:31:00 Bob: world (is_from_me)\n"
+    path = _write(tmp_path, "im.txt", txt_content)
+    msgs = parse_messages(path)
+    assert len(msgs) == 2
+    assert msgs[0].sender == "Alice"
+    assert msgs[1].sender == "我"
+
+

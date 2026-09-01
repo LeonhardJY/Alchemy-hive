@@ -70,9 +70,10 @@ def distill_cmd(
     config_path: str = typer.Option(".alchemy-hive/config.toml", "--config", help="配置文件"),
     profile: str = typer.Option("", "--profile", help="手动画像：性格标签，如 'INTJ 摩羯座 爱吐槽 重感情'（最高优先级）"),
     fix: str = typer.Option(None, "--fix", help="纠正：如 '他不会这样，他其实很细心'（叠加到校正记录）"),
+    incremental: bool = typer.Option(False, "--incremental", help="增量模式：基于已有 persona 合并新消息"),
 ):
-    """蒸馏 PersonaDoc + persona skill（支持手动画像与交互校正）。"""
-    _run_command(distill_persona, name, workdir, load_config(resolve_config_path(config_path)), profile, fix)
+    """蒸馏 PersonaDoc + persona skill（支持手动画像、交互校正、增量更新）。"""
+    _run_command(distill_persona, name, workdir, load_config(resolve_config_path(config_path)), profile, fix, incremental)
 
 @app.command("export")
 def export_cmd(

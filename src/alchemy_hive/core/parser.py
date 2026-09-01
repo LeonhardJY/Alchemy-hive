@@ -18,6 +18,10 @@ SOURCE_LABELS = {
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
     "meta": "Instagram / Facebook",
+    "discord": "Discord",
+    "slack": "Slack",
+    "imessage": "iMessage",
+    "qq": "QQ",
     "generic": "其他（通用字段解析）",
     "generic_json": "其他（通用 JSON）",
     "generic_txt": "其他（通用文本）",
@@ -77,12 +81,22 @@ def detect_source(path: str) -> str:
             return "weflow"                     # 微信 WeFlow 导出
         if '"date"' in head and '"from"' in head and '"text"' in head:
             return "telegram"                   # Telegram Desktop 导出
+        if '"guild"' in head and '"channel"' in head and '"messages"' in head:
+            return "discord"                    # Discord 导出
+        if '"user_id"' in head and '"nickname"' in head and '"time"' in head:
+            return "qq"                         # QQ 导出
+        # Slack：JSON 数组，首元素含 type + ts + text，无 sender_name
+        if '"ts"' in head and '"text"' in head and '"type"' in head and '"sender_name"' not in head:
+            return "slack"                      # Slack 频道导出
         # 头部判不出再补采尾部：大导出首条消息超长时，Meta 的 messages 特征可能落在 64KB 之后
         if p.stat().st_size > _HEAD_SAMPLE:
             tail = _read_tail(p)
             if '"timestamp_ms"' in tail and '"sender_name"' in tail:
                 return "meta"
         return "generic_json"
+    # TXT/CSV 格式检测
+    if "is_from_me" in head.lower():
+        return "imessage"                       # iMessage CSV/TXT
     if re.search(r"^\[\d{1,2}/\d{1,2}/\d{2,4},", head, re.M):
         return "whatsapp"                       # [MM/DD/YY, h:mm AM/PM] Sender: ...
     if re.search(r"^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2}", head, re.M):
@@ -220,6 +234,162 @@ def _parse_meta(path: Path) -> list[Message]:
             timestamp=_normalize_ts_ms(rec.get("timestamp_ms")),
         ))
     out.sort(key=lambda m: m.timestamp or "0000-00-00 00:00:00")
+    return out
+
+
+def _parse_discord(path: Path) -> list[Message]:
+    """Discord 导出 JSON：{guild, channel, messages[{author, content, timestamp, type}]}。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("messages") if isinstance(raw, dict) else []
+    out: list[Message] = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        msg_type = rec.get("type", "")
+        if msg_type not in ("Default", "Reply", ""):
+            continue
+        content = (rec.get("content") or "").strip()
+        if not content:
+            continue
+        author = rec.get("author") or {}
+        sender = author.get("name") or author.get("global_name") or "unknown"
+        ts = _normalize_iso(rec.get("timestamp") or "")
+        out.append(Message(sender=sender, content=content, timestamp=ts))
+    return out
+
+
+def _parse_slack(path: Path) -> list[Message]:
+    """Slack 频道导出 JSON：[{type, user, text, ts}]。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        return []
+    # 加载同级 users.json
+    user_map = {}
+    users_path = path.parent / "users.json"
+    if users_path.exists():
+        try:
+            users = json.loads(users_path.read_text(encoding="utf-8"))
+            if isinstance(users, list):
+                user_map = {u.get("id", ""): u.get("name") or u.get("real_name") or ""
+                            for u in users if isinstance(u, dict)}
+        except Exception:
+            pass
+    out: list[Message] = []
+    for rec in raw:
+        if not isinstance(rec, dict) or rec.get("type") != "message":
+            continue
+        content = (rec.get("text") or "").strip()
+        if not content or content.startswith("<"):
+            continue
+        user_id = rec.get("user") or ""
+        sender = user_map.get(user_id, user_id) or "unknown"
+        ts_raw = rec.get("ts") or "0"
+        try:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(float(ts_raw)))
+        except (ValueError, OverflowError):
+            ts = ""
+        out.append(Message(sender=sender, content=content, timestamp=ts))
+    return out
+
+
+def _parse_imessage(path: Path) -> list[Message]:
+    """iMessage CSV/TXT 导出。"""
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return _parse_imessage_csv(path)
+    return _parse_imessage_txt(path)
+
+
+def _parse_imessage_csv(path: Path) -> list[Message]:
+    """iMessage CSV：handle,text,date,is_from_me。"""
+    import csv
+    out: list[Message] = []
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        for row in csv.DictReader(f):
+            text = (row.get("text") or "").strip()
+            if not text:
+                continue
+            is_me = row.get("is_from_me", "").strip() in ("1", "True", "true")
+            sender = "我" if is_me else (row.get("handle") or "unknown")
+            ts = _parse_imessage_date((row.get("date") or "").strip())
+            out.append(Message(sender=sender, content=text, timestamp=ts))
+    return out
+
+
+def _parse_imessage_txt(path: Path) -> list[Message]:
+    """iMessage TXT：日期 发送者: 内容（含 is_from_me 标记）。"""
+    out: list[Message] = []
+    line_re = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})\s+(.+?):\s*(.+)$")
+    me_re = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})\s+(.+?):\s*(.+?)\s*\(is_from_me\)\s*$")
+    current_sender = "unknown"
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\r\n")
+            # 先检查 is_from_me 标记（优先级高于普通行匹配）
+            me_m = me_re.match(line)
+            if me_m:
+                ts, _, content = me_m.groups()
+                out.append(Message(sender="我", content=content.strip(), timestamp=ts))
+                current_sender = "我"
+                continue
+            m = line_re.match(line)
+            if m:
+                ts, current_sender, content = m.groups()
+                out.append(Message(sender=current_sender, content=content.strip(), timestamp=ts))
+                continue
+            if line.strip() and out:
+                out[-1].content += "\n" + line.strip()
+    return out
+
+
+def _parse_imessage_date(s: str) -> str:
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(s[:19], fmt[:len(fmt)]))
+        except (ValueError, OverflowError):
+            continue
+    return s
+
+
+def _parse_qq(path: Path) -> list[Message]:
+    """QQ 导出 JSON：[{sender:{user_id,nickname}, content:{text}, time}]。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        return []
+    out: list[Message] = []
+    for rec in raw:
+        if not isinstance(rec, dict):
+            continue
+        sender_info = rec.get("sender") or {}
+        if not isinstance(sender_info, dict):
+            continue
+        # 提取内容
+        content = ""
+        cf = rec.get("content")
+        if isinstance(cf, dict):
+            content = cf.get("text", "")
+        elif isinstance(cf, str):
+            content = cf
+        if not content:
+            mf = rec.get("message")
+            if isinstance(mf, str):
+                content = mf
+            elif isinstance(mf, list):
+                content = "".join(
+                    item.get("text", "") if isinstance(item, dict) and item.get("type") == "text"
+                    else (item if isinstance(item, str) else "")
+                    for item in mf
+                )
+        content = content.strip()
+        if not content:
+            continue
+        sender_name = sender_info.get("nickname") or sender_info.get("card") or "unknown"
+        ts_raw = rec.get("time", 0)
+        try:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(int(ts_raw)))
+        except (ValueError, OverflowError, TypeError):
+            ts = ""
+        out.append(Message(sender=sender_name, content=content, timestamp=ts))
     return out
 
 
@@ -400,8 +570,16 @@ def _dispatch(fmt: str, p: Path) -> list[Message]:
         return _parse_telegram(p)
     if fmt == "meta":
         return _parse_meta(p)
+    if fmt == "discord":
+        return _parse_discord(p)
+    if fmt == "slack":
+        return _parse_slack(p)
+    if fmt == "qq":
+        return _parse_qq(p)
     if fmt == "whatsapp":
         return _parse_whatsapp(p, _detect_encoding(p))
+    if fmt == "imessage":
+        return _parse_imessage(p)
     if fmt in ("wechat", "generic_txt") or (fmt == "generic" and p.suffix.lower() == ".txt"):
         return _parse_txt(p)
     raise ValueError(f"未知来源: {fmt}")
@@ -417,13 +595,14 @@ def parse_messages(path: str, self_aliases: list[str] | None = None, source: str
     if not p.exists():
         raise FileNotFoundError(f"文件不存在: {p}")
     suffix = p.suffix.lower()
-    if suffix not in (".json", ".txt"):
-        raise ValueError(f"不支持的文件类型: {suffix}（支持 .json / .txt）")
+    if suffix not in (".json", ".txt", ".csv"):
+        raise ValueError(f"不支持的文件类型: {suffix}（支持 .json / .txt / .csv）")
     if source and source != "auto":
         # 平台与扩展名不符（如对 JSON 强选 WhatsApp）→ 直接按自动识别，避免产出垃圾
-        json_fmt = source in ("weflow", "telegram", "meta", "generic_json")
-        txt_fmt = source in ("wechat", "whatsapp", "generic_txt")
-        if (json_fmt and suffix != ".json") or (txt_fmt and suffix != ".txt"):
+        json_fmt = source in ("weflow", "telegram", "meta", "generic_json", "discord", "slack", "qq")
+        txt_fmt = source in ("wechat", "whatsapp", "generic_txt", "imessage")
+        csv_fmt = source == "imessage"
+        if (json_fmt and suffix != ".json") or (txt_fmt and suffix == ".json") or (csv_fmt and suffix not in (".csv", ".txt", ".json")):
             source = None
         else:
             try:
