@@ -36,6 +36,31 @@
   Facebook)
 ```
 
+## 架构
+
+<p align="center">
+  <a href="docs/architecture.html"><b>🔗 交互式架构图</b></a>
+</p>
+
+<p align="center"><em>点击查看完整架构——悬停查看详情，点击组件聚焦。</em></p>
+
+```
+                    ┌─────────────┐
+                    │  LLM API    │
+                    │  OpenAI 兼容 │
+                    └──────┬──────┘
+                           │ LLM 调用
+聊天源 ──→ 解析器 ──→ 蒸馏引擎 ──→ PersonaDoc ──→ 导出器
+ (10 平台)  (识别+解析)  (分析+撰写)  (通用格式)    (3 种格式)
+                           │                        │
+                           │                        ├──→ System Prompt (.txt)
+                           │                        ├──→ Buzz (.agent.json)
+                           │                        └──→ SillyTavern (角色卡 v2)
+
+              CLI (13 命令)     GUI (pywebview)
+              聊天测试          自动评分 (LLM-as-judge)
+```
+
 ## 效果预览
 
 <!-- 在这里添加录屏 GIF 或截图。

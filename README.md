@@ -36,6 +36,31 @@ your chat file ──→ parser ──→ two-stage LLM distillation ──→ P
   Facebook)
 ```
 
+## Architecture
+
+<p align="center">
+  <a href="docs/architecture.html"><b>🔗 Interactive Architecture Diagram</b></a>
+</p>
+
+<p align="center"><em>Click to explore the full architecture — hover for details, click components to focus.</em></p>
+
+```
+                    ┌─────────────┐
+                    │  LLM API    │
+                    │  OpenAI-compat│
+                    └──────┬──────┘
+                           │ LLM calls
+Chat Sources ──→ Parser ──→ Distill Engine ──→ PersonaDoc ──→ Exporters
+ (10 platforms)   (detect)    (analyze→build)   (universal)   (3 formats)
+                  + parse                                    │
+                                                             ├──→ System Prompt (.txt)
+                                                             ├──→ Buzz (.agent.json)
+                                                             └──→ SillyTavern (card_v2)
+
+              CLI (13 cmds)     GUI (pywebview)
+              Chat playground   Auto-evaluate (LLM-judge)
+```
+
 ## Demo
 
 <!-- Add a screen recording or GIF here showing the GUI in action.

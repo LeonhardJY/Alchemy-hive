@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Alchemy Hive",
+    "subtitle": "Any chat source → LLM distillation → Any agent platform",
+    "locale": "en",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [60, 60],
+    "cols": 12,
+    "gapX": 24,
+    "gapY": 20,
+    "cellW": 100,
+    "cellH": 50
+  },
+  "components": [
+    { "id": "src", "type": "external", "label": "Chat Sources", "sublabel": "10 platforms", "pos": [60, 180], "size": [160, 60] },
+    { "id": "parser", "type": "backend", "label": "Parser", "sublabel": "detect + parse", "pos": [290, 180], "size": [150, 60] },
+    { "id": "distill", "type": "backend", "label": "Distill Engine", "sublabel": "analyze + build", "pos": [520, 180], "size": [150, 60] },
+    { "id": "persona", "type": "database", "label": "PersonaDoc", "sublabel": "universal format", "pos": [750, 180], "size": [150, 60] },
+    { "id": "export", "type": "backend", "label": "Exporters", "sublabel": "3 formats", "pos": [980, 180], "size": [150, 60] },
+    { "id": "llm", "type": "cloud", "label": "LLM API", "sublabel": "OpenAI-compat", "pos": [520, 60], "size": [150, 52] },
+    { "id": "cli", "type": "frontend", "label": "CLI", "sublabel": "13 commands", "pos": [520, 320], "size": [130, 52] },
+    { "id": "gui", "type": "frontend", "label": "GUI", "sublabel": "pywebview", "pos": [720, 320], "size": [130, 52] },
+    { "id": "chat", "type": "backend", "label": "Chat", "sublabel": "playground", "pos": [520, 420], "size": [130, 48] },
+    { "id": "eval", "type": "backend", "label": "Evaluate", "sublabel": "LLM-judge", "pos": [720, 420], "size": [130, 48] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Core Engine", "wraps": ["parser", "distill", "persona", "llm"], "pad": 16 },
+    { "kind": "region", "label": "Interfaces", "wraps": ["cli", "gui", "chat", "eval"], "pad": 16 }
+  ],
+  "connections": [
+    { "id": "c1", "from": "src", "to": "parser", "label": "parse", "variant": "emphasis" },
+    { "id": "c2", "from": "parser", "to": "distill", "label": "Messages" },
+    { "id": "c3", "from": "distill", "to": "persona", "label": "PersonaDoc", "variant": "emphasis" },
+    { "id": "c4", "from": "persona", "to": "export", "label": "export", "variant": "emphasis" },
+    { "id": "c5", "from": "distill", "to": "llm", "label": "LLM calls", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Input", "items": ["10 platforms: WeChat, Telegram, WhatsApp, Discord, Slack, iMessage, QQ, Instagram, Facebook, Generic", "Auto-detection via 64KB sampling", "Plugin-based source adapters"] },
+    { "dot": "emerald", "title": "Engine", "items": ["Two-stage: analyze (structured JSON) to build (400+ line persona)", "Incremental distillation with merge caps", "Interactive correction across runs"] },
+    { "dot": "violet", "title": "Output", "items": ["System Prompt (.txt) for any platform", "Buzz (.agent.json) for buzz desktop", "SillyTavern character_card_v2"] },
+    { "dot": "amber", "title": "Quality", "items": ["Chat playground: talk to persona locally", "Auto-evaluate: LLM-as-judge scoring", "Blindtest: human rating of similarity"] }
+  ]
+}
