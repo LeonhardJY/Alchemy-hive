@@ -93,6 +93,8 @@ _EN_HTML = {
     "导出共同记忆（明文、含真实内容，默认不含）":
         "Export shared memories (plaintext, contains real content — off by default)",
     "开始蒸馏": "Start distillation",
+    "已生成 <span id=\"success_path\"></span> —— 往下拉到「导出」选择格式，或直接开始聊天测试。":
+        "Generated <span id=\"success_path\"></span> — choose an export format below, or start chatting.",
     "蒸馏成功 ✓": "Distillation complete ✓",
     "已生成 <span id=\"success_path\"></span> —— 往下拉到「导入buzz」卡片，一键装进 buzz。":
         "Generated <span id=\"success_path\"></span> — scroll to “Import to buzz” and you're done.",
@@ -113,6 +115,16 @@ _EN_HTML = {
     "腾讯混元": "Tencent Hunyuan",
     # API key 明文切换按钮（静态初值；运行时由 JS 按 T.show_key/hide_key 更新）
     "显示": "Show",
+    # 新增卡片文案
+    "导出": "Export",
+    "测试": "Test",
+    "质量评分": "Quality Score",
+    "点击下方按钮自动评分": "Click below to auto-evaluate",
+    "自动评分": "Auto-evaluate",
+    "发送": "Send",
+    "说点什么": "Say something",
+    "导入 buzz（可选，点击展开）": "Import to buzz (optional, click to expand)",
+    "聊天测试 · 直接和蒸馏出的 persona 对话": "Chat · Talk to the distilled persona directly",
 }
 
 # JS 运行时文案（动态消息，需按语言拼接/占位）
@@ -485,9 +497,9 @@ _HTML = """<!DOCTYPE html>
     <div class="step-sep"></div>
     <div class="step" id="s2"><div class="dot"><span class="num">2</span><span class="check">✓</span></div><div class="step-label">蒸馏人物</div></div>
     <div class="step-sep"></div>
-    <div class="step" id="s3"><div class="dot"><span class="num">3</span><span class="check">✓</span></div><div class="step-label">成品文件</div></div>
+    <div class="step" id="s3"><div class="dot"><span class="num">3</span><span class="check">✓</span></div><div class="step-label">导出</div></div>
     <div class="step-sep"></div>
-    <div class="step" id="s4"><div class="dot"><span class="num">4</span><span class="check">✓</span></div><div class="step-label">导入buzz</div></div>
+    <div class="step" id="s4"><div class="dot"><span class="num">4</span><span class="check">✓</span></div><div class="step-label">测试</div></div>
   </div>
 
   <div class="card">
@@ -559,8 +571,56 @@ _HTML = """<!DOCTYPE html>
 
   <div class="success-banner" id="success_banner">
     <b>蒸馏成功 ✓</b><br>
-    已生成 <span id="success_path"></span> —— 往下拉到「导入buzz」卡片，一键装进 buzz。
+    已生成 <span id="success_path"></span> —— 往下拉到「导出」选择格式，或直接开始聊天测试。
   </div>
+
+
+  <!-- 导出卡片：多格式 + buzz 导入 -->
+  <div class="card" id="export_card" style="display:none;">
+    <div class="label"><span class="lb-num">3</span>导出 · 选择目标平台格式</div>
+    <div class="row" style="margin-bottom:10px;">
+      <select class="field" id="export_fmt" style="flex:2;">
+        <option value="all">全部格式（txt + buzz）</option>
+        <option value="text">System Prompt (.txt) — 通用</option>
+        <option value="buzz">buzz (.agent.json)</option>
+      </select>
+      <button class="ghost" onclick="exportPersona()" style="flex:1;">导出</button>
+    </div>
+    <div class="file-status" id="export_status"></div>
+    <div class="guide-step" style="margin-top:12px; font-size:11.5px; color:var(--muted);">
+      <span class="gs-num" style="font-size:10px;">💡</span>
+      <span><b>.txt</b> 可粘贴到 Claude Projects / OpenAI GPTs 的 system prompt 字段</span>
+    </div>
+  </div>
+
+  <!-- 聊天测试卡片 -->
+  <div class="card" id="chat_card" style="display:none;">
+    <div class="label"><span class="lb-num">4</span>聊天测试 · 直接和蒸馏出的 persona 对话</div>
+    <div class="log" id="chat_msgs" style="min-height:120px; max-height:260px; margin-bottom:10px; user-select:text; cursor:text;">
+      <span class="empty">蒸馏完成后在这里和 TA 聊天...</span>
+    </div>
+    <div class="row">
+      <input class="field" id="chat_input" placeholder="说点什么..." style="flex:1;" onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="ghost" onclick="sendChat()" style="flex:0 0 auto; padding:0 18px;">发送</button>
+    </div>
+  </div>
+
+  <!-- 自动评分卡片 -->
+  <div class="card" id="eval_card" style="display:none;">
+    <div class="label">质量评分</div>
+    <div id="eval_content">
+      <div class="row" style="align-items:center; gap:16px;">
+        <div id="eval_score" style="font-size:36px; font-weight:700; color:var(--muted);">--</div>
+        <div style="flex:1;">
+          <div id="eval_summary" style="font-size:13px; color:var(--text);">点击下方按钮自动评分</div>
+          <div id="eval_dims" style="font-size:11px; color:var(--muted); margin-top:4px;"></div>
+        </div>
+      </div>
+      <button class="ghost" onclick="runEvaluate()" style="margin-top:10px; width:100%;">自动评分</button>
+      <div id="eval_suggestions" style="font-size:11px; color:var(--placeholder); margin-top:8px;"></div>
+    </div>
+  </div>
+
 
   <div class="log-wrap">
     <div class="log-label">运行结果 · 日志</div>
@@ -569,13 +629,15 @@ _HTML = """<!DOCTYPE html>
     </div>
   </div>
 
-  <div class="card">
-    <div class="label"><span class="lb-num">3</span>导入buzz · 把 AI 朋友装进 buzz 开聊（buzz 是免费开源 AI 聊天室，可组建无数个社群）</div>
+  <div class="card" style="opacity:.7;">
+    <div class="label" style="cursor:pointer;" onclick="var el=document.getElementById('buzz_detail');el.style.display=el.style.display==='none'?'block':'none';">导入 buzz（可选，点击展开）</div>
+    <div id="buzz_detail" style="display:none;">
     <div class="guide-step"><span class="gs-num">1</span><span>点下面的按钮 —— 自动打开导出文件夹并复制路径；<b>名称栏不填也会全部导入</b></span></div>
     <div class="guide-step"><span class="gs-num">2</span><span>打开 buzz 桌面端 → 进 My Agents → 点「导入」→ 粘贴路径（或直接把文件拖进窗口）</span></div>
     <div class="guide-step"><span class="gs-num">3</span><span>在频道里 <b>@这个 agent</b> 就能聊天；把多个 agent 拉进同一频道就是一个社群，想建几个建几个</span></div>
     <button class="buzz-btn" id="buzz_btn" onclick="buzzImport()">导入到 buzz · 打开文件夹并复制路径</button>
     <div class="dev-note">开发者进阶：想跳过手动导入、让 buzz-cli 直连 relay 自动建号？终端运行 <code>alchemy-hive buzz-setup</code> 完成配置，之后 <code>buzz-import</code> 免填直连。</div>
+    </div><!-- /buzz_detail -->
   </div>
 
 <script>
@@ -796,7 +858,10 @@ _HTML = """<!DOCTYPE html>
         });
         el("success_path").textContent = exportPath;
         el("success_banner").classList.add("show");
-        markStep(4, "active");   // 成品完成 → 下一步导入 buzz
+        markStep(3, "active");   // 蒸馏完成 → 导出就绪
+        el("export_card").style.display = "";
+        el("chat_card").style.display = "";
+        el("eval_card").style.display = "";
         var bb = el("buzz_btn");
         bb.classList.remove("btn-pulse"); void bb.offsetWidth; bb.classList.add("btn-pulse");
         append(T.done.replace("{path}", exportPath), "ok");
@@ -814,6 +879,77 @@ _HTML = """<!DOCTYPE html>
       if (res.ok) markStep(4, "done");
       else if (res.error) append(T.error_prefix + res.error, "err");
       // 无成品时 res.ok=false 且无 error：日志里已有友好提示，步骤 4 不变绿误导
+    });
+  }
+
+  /* ---- 多格式导出 ---- */
+  function exportPersona() {
+    var name = el("name").value.trim();
+    if (!name) { append("请先填写人物名称", "err"); return; }
+    var fmt = el("export_fmt").value;
+    el("export_status").textContent = "正在导出...";
+    el("export_status").className = "file-status";
+    pywebview.api.export_person(name, fmt).then(function (res) {
+      if (res.ok) {
+        el("export_status").textContent = "已导出: " + res.paths.join(", ");
+        el("export_status").className = "file-status ok";
+        markStep(3, "done");
+      } else {
+        el("export_status").textContent = "导出失败: " + res.error;
+        el("export_status").className = "file-status err";
+      }
+    });
+  }
+
+  /* ---- 聊天测试 ---- */
+  function sendChat() {
+    var input = el("chat_input");
+    var msg = input.value.trim();
+    if (!msg) return;
+    var name = el("name").value.trim() || "TA";
+    input.value = "";
+    appendChatMsg("你", msg);
+    appendChatMsg(name, "正在思考...", "thinking");
+    pywebview.api.chat(name, msg).then(function (res) {
+      removeThinking();
+      if (res.ok) { appendChatMsg(name, res.reply); }
+      else { appendChatMsg(name, "[错误] " + res.error, "err"); }
+    });
+  }
+  function appendChatMsg(role, content, cls) {
+    var box = el("chat_msgs");
+    if (box.firstChild && box.firstChild.className === "empty") box.innerHTML = "";
+    var d = document.createElement("div");
+    d.style.marginBottom = "6px"; d.style.lineHeight = "1.6"; d.style.fontSize = "13px";
+    var label = document.createElement("b");
+    label.textContent = role + "：";
+    label.style.color = (role === "你") ? "var(--accent)" : "var(--ok)";
+    d.appendChild(label);
+    var span = document.createElement("span");
+    span.textContent = content;
+    if (cls === "err") span.style.color = "var(--err)";
+    if (cls === "thinking") { span.style.color = "var(--placeholder)"; span.id = "chat_thinking"; }
+    d.appendChild(span); box.appendChild(d); box.scrollTop = box.scrollHeight;
+  }
+  function removeThinking() { var t = el("chat_thinking"); if (t && t.parentElement) t.parentElement.remove(); }
+
+  /* ---- 自动评分 ---- */
+  function runEvaluate() {
+    var name = el("name").value.trim();
+    if (!name) { append("请先填写人物名称", "err"); return; }
+    el("eval_summary").textContent = "正在评分...";
+    el("eval_score").textContent = "...";
+    el("eval_dims").textContent = ""; el("eval_suggestions").textContent = "";
+    pywebview.api.evaluate(name).then(function (res) {
+      if (res.ok) {
+        var r = res.result, score = r.overall || 0;
+        el("eval_score").textContent = score;
+        el("eval_score").style.color = score >= 70 ? "var(--ok)" : (score >= 40 ? "var(--warn)" : "var(--err)");
+        el("eval_summary").textContent = r.summary || "";
+        el("eval_dims").textContent = "真实感 " + (r.authenticity||0) + "/10 · 一致性 " + (r.consistency||0) + "/10 · 表达力 " + (r.expression||0) + "/10 · 情感 " + (r.emotional_depth||0) + "/10";
+        el("eval_suggestions").textContent = (r.suggestions || []).map(function(s){return "💡 "+s}).join("
+");
+      } else { el("eval_score").textContent = "!"; el("eval_summary").textContent = "评分失败: " + res.error; }
     });
   }
 
@@ -954,6 +1090,75 @@ class Api:
             return {"ok": ok, "logs": logs}
         except Exception as e:
             return {"ok": False, "error": _tr_error(str(e), self.lang), "logs": []}
+
+    def export_person(self, name: str, fmt: str = "all") -> dict:
+        """多格式导出：text/buzz/all。"""
+        try:
+            from ..core.models import PersonaDoc
+            from ..core.safe import safe_filename
+            from .. import exporters  # noqa: F401
+            from ..core.plugins import export_all as _export_all
+            safe = safe_filename(name)
+            persona_path = _gui_workdir() / "persona" / f"{safe}.json"
+            if not persona_path.exists():
+                return {"ok": False, "error": _tr_error("未找到 persona，请先蒸馏", self.lang)}
+            doc = PersonaDoc.model_validate(json.loads(persona_path.read_text(encoding="utf-8")))
+            export_dir = _gui_workdir() / "export"
+            export_dir.mkdir(parents=True, exist_ok=True)
+            if fmt == "all":
+                paths = _export_all(doc, str(export_dir))
+            else:
+                from ..core.plugins import get_exporter
+                adapter = get_exporter(fmt)
+                if not adapter:
+                    return {"ok": False, "error": f"未知格式: {fmt}"}
+                p = adapter.export(doc, str(export_dir))
+                paths = [p] if p else []
+            return {"ok": True, "paths": paths}
+        except Exception as e:
+            return {"ok": False, "error": _tr_error(str(e), self.lang)}
+
+    def chat(self, name: str, message: str) -> dict:
+        """聊天测试。"""
+        try:
+            from ..core.chat import create_session
+            from ..core.safe import safe_filename
+            safe = safe_filename(name)
+            persona_path = _gui_workdir() / "persona" / f"{safe}.json"
+            if not persona_path.exists():
+                return {"ok": False, "error": "未找到 persona，请先蒸馏"}
+            if not hasattr(self, "_chat_sessions"):
+                self._chat_sessions = {}
+            session_key = str(persona_path)
+            if session_key not in self._chat_sessions:
+                file_cfg = load_config(resolve_config_path())
+                model_cfg = file_cfg.get("model") or {}
+                if not model_cfg.get("api_key"):
+                    return {"ok": False, "error": "未配置模型 API key"}
+                self._chat_sessions[session_key] = create_session(str(persona_path), {"model": model_cfg})
+            session = self._chat_sessions[session_key]
+            reply = session.send(message)
+            return {"ok": True, "reply": reply}
+        except Exception as e:
+            return {"ok": False, "error": _tr_error(str(e), self.lang)}
+
+    def evaluate(self, name: str) -> dict:
+        """自动评分。"""
+        try:
+            from ..core.evaluate import auto_evaluate
+            from ..core.safe import safe_filename
+            safe = safe_filename(name)
+            persona_path = _gui_workdir() / "persona" / f"{safe}.json"
+            if not persona_path.exists():
+                return {"ok": False, "error": "未找到 persona，请先蒸馏"}
+            file_cfg = load_config(resolve_config_path())
+            model_cfg = file_cfg.get("model") or {}
+            if not model_cfg.get("api_key"):
+                return {"ok": False, "error": "未配置模型 API key"}
+            result = auto_evaluate(str(persona_path), {"model": model_cfg}, n_scenarios=5)
+            return {"ok": True, "result": result}
+        except Exception as e:
+            return {"ok": False, "error": _tr_error(str(e), self.lang)}
 
 
 def run_gui(lang: str = "auto") -> None:

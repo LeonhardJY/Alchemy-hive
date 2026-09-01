@@ -42,7 +42,7 @@ def test_build_html_en_success_banner_fully_translated():
     html = _build_html("en")
     assert "一键装进 buzz" not in html
     assert "往下拉到" not in html
-    assert "scroll to “Import to buzz”" in html
+    assert "choose an export format below" in html
 
 
 def test_lang_switch_label_and_position():

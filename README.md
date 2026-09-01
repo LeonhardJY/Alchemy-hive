@@ -63,6 +63,13 @@ alchemy-hive gui              # desktop app with drag-and-drop
 alchemy-hive gui --lang en    # English interface
 ```
 
+### Chat & evaluate
+
+```bash
+alchemy-hive chat --name 小明          # talk to the persona
+alchemy-hive evaluate --name 小明      # auto-score quality (LLM-as-judge)
+```
+
 ### Or use the CLI
 
 ```bash
@@ -108,10 +115,13 @@ Detailed export instructions: [English](docs/WEFLOW_EXPORT_EN.md) · [中文](do
 - **6 platforms** — WeChat (WeFlow JSON + txt), Telegram, WhatsApp, Instagram/Facebook, generic JSON/txt
 - **Auto-detection** — samples 64KB to identify platform; falls back to field probing
 - **Two-stage distillation** — structured analysis → long-form persona with real quotes
+- **Plugin architecture** — source adapters + exporter adapters; add new platforms with one file
+- **Multi-format export** — system prompt (.txt), buzz (.agent.json), extensible to SillyTavern/LobeChat
+- **Chat playground** — talk to your persona right in the app, no export needed
+- **Auto-evaluation** — LLM-as-judge scores authenticity, consistency, expression, emotional depth
 - **Blindtest** — quantify "how close it feels" with human ratings
 - **Interactive correction** — `--fix` and `--profile` refine across runs
 - **GUI** — pywebview desktop app, drag-and-drop, bilingual (中文/English)
-- **buzz integration** — one-click import into [buzz](https://github.com/block/buzz) communities
 - **Multi-provider** — DeepSeek, Qwen, Kimi, Zhipu, Ollama, vLLM, or any OpenAI-compatible API
 - **Privacy-first** — all data stays local; memories off by default
 
@@ -123,7 +133,9 @@ Detailed export instructions: [English](docs/WEFLOW_EXPORT_EN.md) · [中文](do
 | `alchemy-hive init` | Generate config template |
 | `alchemy-hive import <file> --name X` | Parse chat → structured messages |
 | `alchemy-hive distill --name X` | Distill persona |
-| `alchemy-hive export --name X` | Export `.agent.json` |
+| `alchemy-hive export --name X --format text/buzz/all` | Export persona (multi-format) |
+| `alchemy-hive chat --name X` | Chat with the persona |
+| `alchemy-hive evaluate --name X` | Auto-score quality (LLM-as-judge) |
 | `alchemy-hive blindtest --name X` | Rate agent similarity (1-5) |
 | `alchemy-hive pack --names A,B` | Multi-agent community packaging |
 | `alchemy-hive doctor` | Check config & connectivity |
