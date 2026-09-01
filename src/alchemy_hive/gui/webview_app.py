@@ -125,6 +125,20 @@ _EN_HTML = {
     "发送": "Send",
     "说点什么": "Say something",
     "导入 buzz（可选，点击展开）": "Import to buzz (optional, click to expand)",
+    # 新增卡片文案（export/chat/evaluate）
+    "导出 · 选择目标平台格式": "Export · Choose target format",
+    "全部格式（txt + buzz）": "All formats (txt + buzz)",
+    "System Prompt (.txt) — 通用": "System Prompt (.txt) — Universal",
+    "可粘贴到 Claude Projects / OpenAI GPTs 的 system prompt 字段":
+        "Can be pasted into Claude Projects / OpenAI GPTs system prompt field",
+    "聊天测试 · 直接和蒸馏出的 persona 对话": "Chat · Talk to the distilled persona directly",
+    "说点什么…": "Say something…",
+    "发送": "Send",
+    "质量评分": "Quality Score",
+    "点击下方按钮自动评分": "Click below to auto-evaluate",
+    "自动评分": "Auto-evaluate",
+    "蒸馏完成后在这里和 TA 聊天…": "Start chatting after distillation…",
+    "导出失败": "Export failed",
     "聊天测试 · 直接和蒸馏出的 persona 对话": "Chat · Talk to the distilled persona directly",
 }
 
