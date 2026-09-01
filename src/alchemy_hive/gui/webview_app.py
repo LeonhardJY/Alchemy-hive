@@ -132,12 +132,12 @@ _EN_HTML = {
     "可粘贴到 Claude Projects / OpenAI GPTs 的 system prompt 字段":
         "Can be pasted into Claude Projects / OpenAI GPTs system prompt field",
     "聊天测试 · 直接和蒸馏出的 persona 对话": "Chat · Talk to the distilled persona directly",
-    "说点什么…": "Say something…",
+    "说点什么...": "Say something...",
     "发送": "Send",
     "质量评分": "Quality Score",
     "点击下方按钮自动评分": "Click below to auto-evaluate",
     "自动评分": "Auto-evaluate",
-    "蒸馏完成后在这里和 TA 聊天…": "Start chatting after distillation…",
+    "蒸馏完成后在这里和 TA 聊天...": "Start chatting after distillation...",
     "导出失败": "Export failed",
     "聊天测试 · 直接和蒸馏出的 persona 对话": "Chat · Talk to the distilled persona directly",
 }

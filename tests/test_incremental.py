@@ -125,22 +125,21 @@ def test_merge_analysis_preserves_relationship():
 # 6. _extract_last_timestamp – from parsed JSON file
 # ---------------------------------------------------------------------------
 
-def test_extract_last_timestamp_from_parsed(tmp_path):
-    workdir = tmp_path / "project"
-    parsed_dir = workdir / "parsed"
-    parsed_dir.mkdir(parents=True)
-
-    messages = [
-        {"sender": "A", "content": "hi", "timestamp": "2024-01-10 08:00:00"},
-        {"sender": "B", "content": "bye", "timestamp": "2025-06-15 23:30:45"},
-        {"sender": "A", "content": "ok", "timestamp": "2025-12-01 14:00:00"},
-    ]
-    # safe_filename("小明") == "小明"
-    (parsed_dir / "小明.json").write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
-
-    doc = _make_doc(memory=[])
-    ts = _extract_last_timestamp(doc, workdir=str(workdir), name="小明")
+def test_extract_last_timestamp_from_persona(tmp_path):
+    """_extract_last_timestamp 优先使用 PersonaDoc.last_distill_ts 字段。"""
+    doc = _make_doc(memory=[], last_distill_ts="2025-12-01 14:00:00")
+    ts = _extract_last_timestamp(doc)
     assert ts == "2025-12-01 14:00:00"
+
+
+def test_extract_last_timestamp_from_parsed_fallback(tmp_path):
+    """没有 last_distill_ts 时回退到记忆文本正则。"""
+    doc = _make_doc(memory=[
+        {"slug": "c", "body": "2024-06-15 一起吃饭"},
+        {"slug": "d", "body": "2025-01-20 一起去旅行"},
+    ])
+    ts = _extract_last_timestamp(doc)
+    assert ts == "2025-01-20"
 
 
 # ---------------------------------------------------------------------------

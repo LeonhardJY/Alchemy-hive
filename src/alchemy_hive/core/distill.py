@@ -281,6 +281,13 @@ def distill(messages: list[Message], name: str, config: dict, manual_profile: st
         doc.system_prompt = persona_text
     else:
         doc.system_prompt = build_system_prompt(doc, data)  # 兜底：结构化渲染，保证非空
+
+    # 记录最后处理时间戳（增量蒸馏用）
+    if messages:
+        timestamps = [m.timestamp for m in messages if m.timestamp]
+        if timestamps:
+            doc.last_distill_ts = max(timestamps)
+
     return doc
 
 
@@ -399,21 +406,10 @@ def distill_incremental(messages: list[Message], name: str, config: dict,
 
 
 def _extract_last_timestamp(doc: PersonaDoc, workdir: str = "", name: str = "") -> str | None:
-    """提取最后处理时间戳：优先从 parsed JSON 的最后一条消息取，回退到记忆文本正则。"""
-    # 优先方案：从 parsed messages 文件取最后时间戳（最可靠）
-    if workdir and name:
-        from .safe import safe_filename
-        parsed_path = Path(workdir) / "parsed" / f"{safe_filename(name)}.json"
-        if parsed_path.exists():
-            try:
-                msgs_data = json.loads(parsed_path.read_text(encoding="utf-8"))
-                if isinstance(msgs_data, list) and msgs_data:
-                    last = msgs_data[-1]
-                    ts = last.get("timestamp", "")
-                    if ts and len(ts) >= 10:
-                        return ts[:19]  # 截取 YYYY-MM-DD HH:MM:SS
-            except Exception:
-                pass
+    """提取最后处理时间戳：优先从 persona 的 last_distill_ts 字段取，回退到记忆文本正则。"""
+    # 优先方案：从 persona 元数据取（最可靠）
+    if doc.last_distill_ts:
+        return doc.last_distill_ts
     # 回退：从记忆文本正则提取（不可靠，但兜底）
     import re
     last_ts = ""

@@ -31,3 +31,4 @@ class PersonaDoc(BaseModel):
     manual_profile: str = ""     # 用户手动画像（性格标签等，最高优先级）
     corrections: list[str] = []  # 用户纠正记录（dot-skill correction 层）
     system_prompt: str = ""      # 生成后的完整 persona prompt 文本
+    last_distill_ts: str = ""    # 上次蒸馏的最后消息时间戳（增量蒸馏用）
