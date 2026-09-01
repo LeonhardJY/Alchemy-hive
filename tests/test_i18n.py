@@ -10,7 +10,7 @@ from alchemy_hive.buzz.importing import import_to_buzz
 
 def test_build_html_zh_keeps_chinese():
     html = _build_html("zh")
-    assert "把微信聊天蒸馏成 AI 朋友" in html
+    assert "任意聊天源" in html
     assert "window.T =" in html
     assert '"start": "开始蒸馏"' in html
     assert '<option value="zh" selected>' in html
@@ -18,8 +18,8 @@ def test_build_html_zh_keeps_chinese():
 
 def test_build_html_en_translates_static_and_js():
     html = _build_html("en")
-    assert "Distill your WeChat chats into AI friends" in html
-    assert "把微信聊天蒸馏成 AI 朋友" not in html
+    assert "Any chat source" in html
+    assert "任意聊天源" not in html
     assert '<html lang="en">' in html
     assert '"start": "Start distillation"' in html
     assert '<option value="en" selected>' in html
@@ -29,7 +29,7 @@ def test_build_html_en_no_leftover_visible_chinese():
     """英文构建不应残留可见中文文案。"""
     html = _build_html("en")
     for zh in [
-        "把微信聊天蒸馏", "浏览文件", "开始蒸馏", "导出共同记忆",
+        "任意聊天源", "浏览文件", "开始蒸馏", "导出共同记忆",
         "自动识别（推荐）", "你的昵称（可选）", "运行后在这里",
         "导入到 buzz · 打开文件夹并复制路径", "开发者进阶",
         "通义千问（阿里云）", "豆包（火山方舟）", "显示",

@@ -45,8 +45,8 @@ _GUI_TITLES = {
 # 英文界面：静态 HTML 文案的整句替换表（中文模板保持不变，仅 en 构建时应用）
 _EN_HTML = {
     "<html lang=\"zh-CN\">": "<html lang=\"en\">",
-    "把微信聊天蒸馏成 AI 朋友，导入 <b>buzz</b> 随时开聊、组建无数个 AI 社群":
-        "Distill your WeChat chats into AI friends, drop them into <b>buzz</b> and chat anytime.",
+    "任意聊天源 → AI persona → 任意 agent 平台":
+        "Any chat source → AI persona → Any agent platform",
     "本项目完全开源，不会获取您的任何个人信息和 API key。":
         "Open source — we never collect your personal data or API keys.",
     "原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来":
@@ -55,8 +55,8 @@ _EN_HTML = {
         "Step 2 · Persona & model (the more specific the profile, the closer it gets)",
     "导入buzz · 把 AI 朋友装进 buzz 开聊（buzz 是免费开源 AI 聊天室，可组建无数个社群）":
         "Import to buzz · put your AI friend into buzz (free & open source — build any number of communities)",
-    "原料导入": "Import",
-    "蒸馏人物": "Distill",
+    "选择来源": "Source",
+    "蒸馏": "Distill",
     "成品文件": "Export",
     "导入buzz": "Into buzz",
     "自动识别（推荐）": "Auto-detect (Recommended)",
@@ -127,7 +127,7 @@ _EN_HTML = {
     "导入 buzz（可选，点击展开）": "Import to buzz (optional, click to expand)",
     # 新增卡片文案（export/chat/evaluate）
     "导出 · 选择目标平台格式": "Export · Choose target format",
-    "全部格式（txt + buzz）": "All formats (txt + buzz)",
+    "全部格式": "All formats",
     "System Prompt (.txt) — 通用": "System Prompt (.txt) — Universal",
     "可粘贴到 Claude Projects / OpenAI GPTs 的 system prompt 字段":
         "Can be pasted into Claude Projects / OpenAI GPTs system prompt field",
@@ -503,34 +503,36 @@ _HTML = """<!DOCTYPE html>
 
   <div class="brand">
     <h1>Alchemy Hive</h1>
-    <p>把微信聊天蒸馏成 AI 朋友，导入 <b>buzz</b> 随时开聊、组建无数个 AI 社群</p>
+    <p>任意聊天源 → AI persona → 任意 agent 平台</p>
     <p class="privacy-note">本项目完全开源，不会获取您的任何个人信息和 API key。</p>
   </div>
 
   <div class="steps">
-    <div class="step active" id="s1"><div class="dot"><span class="num">1</span><span class="check">✓</span></div><div class="step-label">原料导入</div></div>
+    <div class="step active" id="s1"><div class="dot"><span class="num">1</span><span class="check">✓</span></div><div class="step-label">选择来源</div></div>
     <div class="step-sep"></div>
-    <div class="step" id="s2"><div class="dot"><span class="num">2</span><span class="check">✓</span></div><div class="step-label">蒸馏人物</div></div>
+    <div class="step" id="s2"><div class="dot"><span class="num">2</span><span class="check">✓</span></div><div class="step-label">蒸馏</div></div>
     <div class="step-sep"></div>
-    <div class="step" id="s3"><div class="dot"><span class="num">3</span><span class="check">✓</span></div><div class="step-label">导出</div></div>
-    <div class="step-sep"></div>
-    <div class="step" id="s4"><div class="dot"><span class="num">4</span><span class="check">✓</span></div><div class="step-label">测试</div></div>
+    <div class="step" id="s3"><div class="dot"><span class="num">3</span><span class="check">✓</span></div><div class="step-label">导出 / 测试</div></div>
   </div>
 
   <div class="card">
     <div class="label"><span class="lb-num">1</span>原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来</div>
     <select class="field" id="source" style="margin-bottom:12px;" onchange="onSource()">
       <option value="auto" selected>自动识别（推荐）</option>
-      <option value="weflow">微信（WeFlow 导出）</option>
-      <option value="wechat">微信 txt</option>
-      <option value="telegram">Telegram</option>
-      <option value="whatsapp">WhatsApp</option>
-      <option value="meta">Instagram / Facebook</option>
-      <option value="generic">其他（通用字段解析）</option>
-      <option value="discord">Discord</option>
-      <option value="slack">Slack</option>
-      <option value="imessage">iMessage</option>
-      <option value="qq">QQ</option>
+      <optgroup label="常用">
+        <option value="weflow">微信（WeFlow 导出）</option>
+        <option value="wechat">微信 txt</option>
+        <option value="telegram">Telegram</option>
+        <option value="whatsapp">WhatsApp</option>
+        <option value="discord">Discord</option>
+      </optgroup>
+      <optgroup label="其他">
+        <option value="slack">Slack</option>
+        <option value="imessage">iMessage</option>
+        <option value="qq">QQ</option>
+        <option value="meta">Instagram / Facebook</option>
+        <option value="generic">其他（通用字段解析）</option>
+      </optgroup>
     </select>
     <div class="dropzone" id="dropzone"
          ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
@@ -599,9 +601,10 @@ _HTML = """<!DOCTYPE html>
     <div class="label"><span class="lb-num">3</span>导出 · 选择目标平台格式</div>
     <div class="row" style="margin-bottom:10px;">
       <select class="field" id="export_fmt" style="flex:2;">
-        <option value="all">全部格式（txt + buzz）</option>
+        <option value="all">全部格式</option>
         <option value="text">System Prompt (.txt) — 通用</option>
         <option value="buzz">buzz (.agent.json)</option>
+        <option value="sillytavern">SillyTavern (character_card_v2)</option>
       </select>
       <button class="ghost" onclick="exportPersona()" style="flex:1;">导出</button>
     </div>
@@ -731,7 +734,7 @@ _HTML = """<!DOCTYPE html>
 
   /* 四步进度：markStep(n,state) —— n 之前全部变绿 done，n 高亮，之后待办 */
   function markStep(n, state) {
-    for (var i = 1; i <= 4; i++) {
+    for (var i = 1; i <= 3; i++) {
       var s = el("s" + i);
       if (!s) continue;
       if (i === n) s.className = "step " + state;
@@ -877,7 +880,7 @@ _HTML = """<!DOCTYPE html>
         });
         el("success_path").textContent = exportPath;
         el("success_banner").classList.add("show");
-        markStep(3, "active");   // 蒸馏完成 → 导出就绪
+        markStep(3, "active");   // 蒸馏完成 → 导出/测试就绪
         el("export_card").style.display = "";
         el("chat_card").style.display = "";
         el("eval_card").style.display = "";
@@ -892,10 +895,10 @@ _HTML = """<!DOCTYPE html>
 
   /* 一键导入到 buzz：不填名称也会导入全部成品（高容错） */
   function buzzImport() {
-    markStep(4, "active");
+    // buzz 导入是步骤 3 的子操作
     pywebview.api.import_buzz(el("name").value.trim()).then(function (res) {
       (res.logs || []).forEach(appendClassified);
-      if (res.ok) markStep(4, "done");
+      // buzz 导入完成（步骤 3 已在导出时完成）
       else if (res.error) append(T.error_prefix + res.error, "err");
       // 无成品时 res.ok=false 且无 error：日志里已有友好提示，步骤 4 不变绿误导
     });
@@ -912,7 +915,7 @@ _HTML = """<!DOCTYPE html>
       if (res.ok) {
         el("export_status").textContent = "已导出: " + res.paths.join(", ");
         el("export_status").className = "file-status ok";
-        markStep(3, "done");
+        markStep(3, "done");  // 导出完成 → 步骤 3 变绿
       } else {
         el("export_status").textContent = "导出失败: " + res.error;
         el("export_status").className = "file-status err";
