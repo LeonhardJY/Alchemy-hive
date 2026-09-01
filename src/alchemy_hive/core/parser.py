@@ -8,7 +8,10 @@ import re
 import time
 from pathlib import Path
 
-from .models import Message
+from .models import Message, SELF_ALIASES
+
+# 向后兼容别名（内部使用）
+_SELF_ALIASES = SELF_ALIASES
 
 # 平台标识 → 中文名（GUI 下拉与识别结果显示共用）
 SOURCE_LABELS = {
@@ -18,6 +21,10 @@ SOURCE_LABELS = {
     "telegram": "Telegram",
     "whatsapp": "WhatsApp",
     "meta": "Instagram / Facebook",
+    "discord": "Discord",
+    "slack": "Slack",
+    "imessage": "iMessage",
+    "qq": "QQ",
     "generic": "其他（通用字段解析）",
     "generic_json": "其他（通用 JSON）",
     "generic_txt": "其他（通用文本）",
@@ -54,6 +61,16 @@ def _read_head(path: Path) -> str:
     return raw.decode("utf-8", errors="ignore")
 
 
+def _read_tail(path: Path) -> str:
+    """读文件末尾 _HEAD_SAMPLE 字节作为识别补采样（仅在大文件时调用）。"""
+    size = path.stat().st_size
+    with path.open("rb") as f:
+        if size > _HEAD_SAMPLE:
+            f.seek(size - _HEAD_SAMPLE)
+        raw = f.read(_HEAD_SAMPLE)
+    return raw.decode("utf-8", errors="ignore")
+
+
 def detect_source(path: str) -> str:
     """按内容特征识别导出来源平台。返回 SOURCE_LABELS 里的标识。"""
     p = Path(path)
@@ -67,7 +84,22 @@ def detect_source(path: str) -> str:
             return "weflow"                     # 微信 WeFlow 导出
         if '"date"' in head and '"from"' in head and '"text"' in head:
             return "telegram"                   # Telegram Desktop 导出
+        if '"guild"' in head and '"channel"' in head and '"messages"' in head:
+            return "discord"                    # Discord 导出
+        if '"user_id"' in head and '"nickname"' in head and '"time"' in head:
+            return "qq"                         # QQ 导出
+        # Slack：JSON 数组，首元素含 type + ts + text，无 sender_name
+        if '"ts"' in head and '"text"' in head and '"type"' in head and '"sender_name"' not in head:
+            return "slack"                      # Slack 频道导出
+        # 头部判不出再补采尾部：大导出首条消息超长时，Meta 的 messages 特征可能落在 64KB 之后
+        if p.stat().st_size > _HEAD_SAMPLE:
+            tail = _read_tail(p)
+            if '"timestamp_ms"' in tail and '"sender_name"' in tail:
+                return "meta"
         return "generic_json"
+    # TXT/CSV 格式检测
+    if "is_from_me" in head.lower():
+        return "imessage"                       # iMessage CSV/TXT
     if re.search(r"^\[\d{1,2}/\d{1,2}/\d{2,4},", head, re.M):
         return "whatsapp"                       # [MM/DD/YY, h:mm AM/PM] Sender: ...
     if re.search(r"^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2}", head, re.M):
@@ -82,11 +114,14 @@ def _normalize_iso(ts: str) -> str:
 
 
 def _normalize_ts_ms(ms) -> str:
-    """Meta 导出的 Unix 毫秒时间戳（int 或字符串）→ 本地 'YYYY-MM-DD HH:MM:SS'。"""
+    """Meta 导出的 Unix 毫秒时间戳（int 或字符串）→ UTC 'YYYY-MM-DD HH:MM:SS'。
+
+    用 UTC 而非 localtime：保证同一文件在不同时区机器上解析结果一致。
+    """
     try:
         if isinstance(ms, str):
             ms = float(ms)
-        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ms / 1000))
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ms / 1000))
     except Exception:
         return ""
 
@@ -135,27 +170,49 @@ def _wa_ts(year: int, month: int, day: int, hour: int, minute: int, second: int,
     return f"{year:04d}-{month:02d}-{day:02d} {h:02d}:{minute:02d}:{second:02d}"
 
 
+def _wa_day_first(matches: list) -> bool:
+    """判定 WhatsApp 日期是 DD/MM 还是 MM/DD。
+
+    导出格式跟随设备 locale（非美区 Android 常见 DD/MM/YY），两种都合法无法从单条区分；
+    用全文件启发式：任一行"首位" >12 则该位只能是日 → DD/MM；任一行"次位" >12 → 确认 MM/DD；
+    都判不出时默认美式 MM/DD（WhatsApp 官方导出默认）。
+    """
+    for m in matches:
+        if int(m.group(1)) > 12:
+            return True
+    for m in matches:
+        if int(m.group(2)) > 12:
+            return False
+    return False
+
+
 def _parse_whatsapp(path: Path, enc: str) -> list[Message]:
-    """WhatsApp 导出 txt：[日期, 时间 AM/PM] 发送者: 内容。跳过媒体/系统行，续行接上一句。"""
-    out: list[Message] = []
+    """WhatsApp 导出 txt：[日期, 时间 AM/PM] 发送者: 内容。跳过媒体/系统行，续行接上一句。
+
+    两趟：先全文件判定 DD/MM 还是 MM/DD（_wa_day_first），再按结论构建消息。
+    """
     with path.open("r", encoding=enc) as f:
-        for line in f:
-            line = line.rstrip("\r\n")
-            m = _WHATSAPP_LINE.match(line)
-            if m:
-                mo, da, yr, hh, mm, ss, ap, sender, content = m.groups()
-                sender = (sender or "").strip()
-                content = (content or "").strip()
-                if not sender or not content or content.startswith("[") or _MEDIA_EXT.search(content):
-                    continue
-                out.append(Message(
-                    sender=sender,
-                    content=content,
-                    timestamp=_wa_ts(int(yr), int(mo), int(da), int(hh), int(mm), int(ss or 0), ap),
-                ))
-            elif out and line.strip() and not line.strip().startswith("["):
-                # 续行：长消息换行，接在上一句末尾
-                out[-1].content += "\n" + line.strip()
+        lines = [ln.rstrip("\r\n") for ln in f]
+    matches = [_WHATSAPP_LINE.match(ln) for ln in lines]
+    day_first = _wa_day_first([m for m in matches if m])
+    out: list[Message] = []
+    for line, m in zip(lines, matches):
+        if m:
+            mo, da, yr, hh, mm, ss, ap, sender, content = m.groups()
+            if day_first:
+                mo, da = da, mo
+            sender = (sender or "").strip()
+            content = (content or "").strip()
+            if not sender or not content or content.startswith("[") or _MEDIA_EXT.search(content):
+                continue
+            out.append(Message(
+                sender=sender,
+                content=content,
+                timestamp=_wa_ts(int(yr), int(mo), int(da), int(hh), int(mm), int(ss or 0), ap),
+            ))
+        elif out and line.strip() and not line.strip().startswith("["):
+            # 续行：长消息换行，接在上一句末尾
+            out[-1].content += "\n" + line.strip()
     return out
 
 
@@ -180,6 +237,162 @@ def _parse_meta(path: Path) -> list[Message]:
             timestamp=_normalize_ts_ms(rec.get("timestamp_ms")),
         ))
     out.sort(key=lambda m: m.timestamp or "0000-00-00 00:00:00")
+    return out
+
+
+def _parse_discord(path: Path) -> list[Message]:
+    """Discord 导出 JSON：{guild, channel, messages[{author, content, timestamp, type}]}。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    records = raw.get("messages") if isinstance(raw, dict) else []
+    out: list[Message] = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        msg_type = rec.get("type", "")
+        if msg_type not in ("Default", "Reply", ""):
+            continue
+        content = (rec.get("content") or "").strip()
+        if not content:
+            continue
+        author = rec.get("author") or {}
+        sender = author.get("name") or author.get("global_name") or "unknown"
+        ts = _normalize_iso(rec.get("timestamp") or "")
+        out.append(Message(sender=sender, content=content, timestamp=ts))
+    return out
+
+
+def _parse_slack(path: Path) -> list[Message]:
+    """Slack 频道导出 JSON：[{type, user, text, ts}]。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        return []
+    # 加载同级 users.json
+    user_map = {}
+    users_path = path.parent / "users.json"
+    if users_path.exists():
+        try:
+            users = json.loads(users_path.read_text(encoding="utf-8"))
+            if isinstance(users, list):
+                user_map = {u.get("id", ""): u.get("name") or u.get("real_name") or ""
+                            for u in users if isinstance(u, dict)}
+        except Exception:
+            pass
+    out: list[Message] = []
+    for rec in raw:
+        if not isinstance(rec, dict) or rec.get("type") != "message":
+            continue
+        content = (rec.get("text") or "").strip()
+        if not content or content.startswith("<"):
+            continue
+        user_id = rec.get("user") or ""
+        sender = user_map.get(user_id, user_id) or "unknown"
+        ts_raw = rec.get("ts") or "0"
+        try:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(float(ts_raw)))
+        except (ValueError, OverflowError):
+            ts = ""
+        out.append(Message(sender=sender, content=content, timestamp=ts))
+    return out
+
+
+def _parse_imessage(path: Path) -> list[Message]:
+    """iMessage CSV/TXT 导出。"""
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return _parse_imessage_csv(path)
+    return _parse_imessage_txt(path)
+
+
+def _parse_imessage_csv(path: Path) -> list[Message]:
+    """iMessage CSV：handle,text,date,is_from_me。"""
+    import csv
+    out: list[Message] = []
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        for row in csv.DictReader(f):
+            text = (row.get("text") or "").strip()
+            if not text:
+                continue
+            is_me = row.get("is_from_me", "").strip() in ("1", "True", "true")
+            sender = "我" if is_me else (row.get("handle") or "unknown")
+            ts = _parse_imessage_date((row.get("date") or "").strip())
+            out.append(Message(sender=sender, content=text, timestamp=ts))
+    return out
+
+
+def _parse_imessage_txt(path: Path) -> list[Message]:
+    """iMessage TXT：日期 发送者: 内容（含 is_from_me 标记）。"""
+    out: list[Message] = []
+    line_re = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})\s+(.+?):\s*(.+)$")
+    me_re = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})\s+(.+?):\s*(.+?)\s*\(is_from_me\)\s*$")
+    current_sender = "unknown"
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\r\n")
+            # 先检查 is_from_me 标记（优先级高于普通行匹配）
+            me_m = me_re.match(line)
+            if me_m:
+                ts, _, content = me_m.groups()
+                out.append(Message(sender="我", content=content.strip(), timestamp=ts))
+                current_sender = "我"
+                continue
+            m = line_re.match(line)
+            if m:
+                ts, current_sender, content = m.groups()
+                out.append(Message(sender=current_sender, content=content.strip(), timestamp=ts))
+                continue
+            if line.strip() and out:
+                out[-1].content += "\n" + line.strip()
+    return out
+
+
+def _parse_imessage_date(s: str) -> str:
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return time.strftime("%Y-%m-%d %H:%M:%S", time.strptime(s.strip(), fmt))
+        except (ValueError, OverflowError):
+            continue
+    return s
+
+
+def _parse_qq(path: Path) -> list[Message]:
+    """QQ 导出 JSON：[{sender:{user_id,nickname}, content:{text}, time}]。"""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        return []
+    out: list[Message] = []
+    for rec in raw:
+        if not isinstance(rec, dict):
+            continue
+        sender_info = rec.get("sender") or {}
+        if not isinstance(sender_info, dict):
+            continue
+        # 提取内容
+        content = ""
+        cf = rec.get("content")
+        if isinstance(cf, dict):
+            content = cf.get("text", "")
+        elif isinstance(cf, str):
+            content = cf
+        if not content:
+            mf = rec.get("message")
+            if isinstance(mf, str):
+                content = mf
+            elif isinstance(mf, list):
+                content = "".join(
+                    item.get("text", "") if isinstance(item, dict) and item.get("type") == "text"
+                    else (item if isinstance(item, str) else "")
+                    for item in mf
+                )
+        content = content.strip()
+        if not content:
+            continue
+        sender_name = sender_info.get("nickname") or sender_info.get("card") or "unknown"
+        ts_raw = rec.get("time", 0)
+        try:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(int(ts_raw)))
+        except (ValueError, OverflowError, TypeError):
+            ts = ""
+        out.append(Message(sender=sender_name, content=content, timestamp=ts))
     return out
 
 
@@ -258,7 +471,7 @@ def _parse_json(path: Path) -> list[Message]:
 _TIME_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})\s*['\"]?(.+?)['\"]?\s*$")
 
 # 编码探测：只读前 256KB 判断，避免大文件反复整读
-_ENCODINGS = ("utf-8-sig", "utf-8", "gbk")
+_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "gb18030")
 _ENCODING_SAMPLE = 262144
 
 
@@ -328,11 +541,13 @@ def _parse_txt(path: Path) -> list[Message]:
     try:
         return _parse_txt_with_encoding(path, enc)
     except UnicodeDecodeError:
-        # 罕见：ASCII 开头 + 后面才出现中文，采样判成 utf-8 但 gbk 文件 → 改 gbk 重试
-        try:
-            return _parse_txt_with_encoding(path, "gbk")
-        except UnicodeDecodeError:
-            raise ValueError(f"文件 {path} 解码失败：包含非法字符，可能已损坏")
+        # 罕见：ASCII 开头 + 后面才出现中文，采样判成 utf-8 但 gbk/gb18030 文件 → 逐级重试
+        for enc in ("gbk", "gb18030"):
+            try:
+                return _parse_txt_with_encoding(path, enc)
+            except UnicodeDecodeError:
+                continue
+        raise ValueError(f"文件 {path} 解码失败：包含非法字符，可能已损坏")
 
 
 def _normalize_self(messages: list[Message], self_aliases: list[str] | None = None) -> None:
@@ -358,8 +573,16 @@ def _dispatch(fmt: str, p: Path) -> list[Message]:
         return _parse_telegram(p)
     if fmt == "meta":
         return _parse_meta(p)
+    if fmt == "discord":
+        return _parse_discord(p)
+    if fmt == "slack":
+        return _parse_slack(p)
+    if fmt == "qq":
+        return _parse_qq(p)
     if fmt == "whatsapp":
         return _parse_whatsapp(p, _detect_encoding(p))
+    if fmt == "imessage":
+        return _parse_imessage(p)
     if fmt in ("wechat", "generic_txt") or (fmt == "generic" and p.suffix.lower() == ".txt"):
         return _parse_txt(p)
     raise ValueError(f"未知来源: {fmt}")
@@ -375,13 +598,14 @@ def parse_messages(path: str, self_aliases: list[str] | None = None, source: str
     if not p.exists():
         raise FileNotFoundError(f"文件不存在: {p}")
     suffix = p.suffix.lower()
-    if suffix not in (".json", ".txt"):
-        raise ValueError(f"不支持的文件类型: {suffix}（支持 .json / .txt）")
+    if suffix not in (".json", ".txt", ".csv"):
+        raise ValueError(f"不支持的文件类型: {suffix}（支持 .json / .txt / .csv）")
     if source and source != "auto":
         # 平台与扩展名不符（如对 JSON 强选 WhatsApp）→ 直接按自动识别，避免产出垃圾
-        json_fmt = source in ("weflow", "telegram", "meta", "generic_json")
-        txt_fmt = source in ("wechat", "whatsapp", "generic_txt")
-        if (json_fmt and suffix != ".json") or (txt_fmt and suffix != ".txt"):
+        json_fmt = source in ("weflow", "telegram", "meta", "generic_json", "discord", "slack", "qq")
+        txt_fmt = source in ("wechat", "whatsapp", "generic_txt", "imessage")
+        csv_fmt = source == "imessage"
+        if (json_fmt and suffix != ".json") or (txt_fmt and suffix == ".json") or (csv_fmt and suffix not in (".csv", ".txt", ".json")):
             source = None
         else:
             try:

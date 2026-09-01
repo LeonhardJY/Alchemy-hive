@@ -1,20 +1,27 @@
 """盲测对拍：从真实聊天抽样片段，让 agent 接话，人工评分验证蒸馏质量。"""
-from .models import Message
+from .models import Message, SELF_ALIASES
 from .distill import DistillError
 from .llm import chat_completion, LLMError
-from .parser import _SELF_ALIASES
 
 
-def extract_pairs(messages: list[Message], n: int, context_len: int = 3) -> list[dict]:
-    """抽取 n 个对话对：context 为上文（对方+自己），real_reply 为对方最后发言。"""
+def extract_pairs(messages: list[Message], n: int, context_len: int = 3,
+                  self_aliases: list[str] | None = None) -> list[dict]:
+    """抽取 n 个对话对：context 为上文（对方+自己），real_reply 为对方最后发言。
+
+    只采"上文末条是本人发言"的片段：保证 real_reply 是对本人的回复，
+    避免抽到对方连发自说自话的消息导致盲测评分失真。
+
+    self_aliases：你在对话里的昵称列表（来自 --self），与默认的 me/self/我 合并。
+    """
+    aliases = {a.lower() for a in list(SELF_ALIASES) + list(self_aliases or [])}
     pairs: list[dict] = []
     for i, m in enumerate(messages):
-        if m.sender in _SELF_ALIASES:
+        if m.sender.lower() in aliases:
             continue
         if len(pairs) >= n:
             break
         ctx = messages[max(0, i - context_len):i]
-        if ctx:
+        if ctx and ctx[-1].sender.lower() in aliases:
             pairs.append({"context": ctx, "real_reply": m})
     return pairs
 

@@ -129,6 +129,47 @@ def test_save_and_load_buzz_config(tmp_path):
     assert c2["channel"] == "chan-B" and c2["relay_url"] is None, "应替换旧 [buzz] 段"
 
 
+def test_save_buzz_channel_escapes_special_chars(tmp_path):
+    """channel/relay 含引号/反斜杠 → 写出的仍是合法 TOML，能原样读回（不写坏配置）。"""
+    cfg = tmp_path / "cfg.toml"
+    weird = 'chan-"evil"\\x'
+    _save_buzz_channel(str(cfg), weird, 'http://r/"q"')
+    c = _load_buzz_config(str(cfg))
+    assert c["channel"] == weird
+    assert c["relay_url"] == 'http://r/"q"'
+
+
+def test_save_buzz_channel_does_not_corrupt_other_sections(tmp_path):
+    """修复回归：其他段含 [buzz] 字符串时（如 URL），不应损坏配置。"""
+    cfg = tmp_path / "cfg.toml"
+    # 写一个含 [buzz] 字面量的非 [buzz] 段配置
+    cfg.write_text(
+        '[model]\n'
+        'api_key = "k"\n'
+        '\n'
+        '[other]\n'
+        'relay = "wss://relay.example/[buzz]/ws"\n',
+        encoding="utf-8",
+    )
+    _save_buzz_channel(str(cfg), "chan-new")
+    c = _load_buzz_config(str(cfg))
+    assert c["channel"] == "chan-new", "应正确写入新 channel"
+    # 读回完整配置验证 other 段未被破坏
+    from alchemy_hive.core.distill import load_config
+    full = load_config(str(cfg))
+    assert full.get("model", {}).get("api_key") == "k", "[model] 段应保留"
+    assert full.get("other", {}).get("relay") == "wss://relay.example/[buzz]/ws", "[other] 段应保留"
+
+
+def test_buzz_import_cli_lang_en(tmp_path):
+    """buzz-import --lang en → 输出英文文案（不再只有中文）。"""
+    from typer.testing import CliRunner
+    from alchemy_hive.cli.app import app
+    r = CliRunner().invoke(app, ["buzz-import", "--workdir", str(tmp_path), "--lang", "en"])
+    assert r.exit_code == 0
+    assert "distilled anything" in r.output  # no_build 英文文案
+
+
 def test_buzz_setup_no_cli(monkeypatch, tmp_path):
     import alchemy_hive.buzz.importing as imp
     monkeypatch.setattr(imp, "_find_buzz_cli", lambda: None)

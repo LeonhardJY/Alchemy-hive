@@ -1,4 +1,4 @@
-"""export：PersonaDoc → buzz .agent.json。"""
+"""export：PersonaDoc → 多格式导出（text/buzz/all）。"""
 import json
 from pathlib import Path
 
@@ -10,24 +10,27 @@ from ..core.models import PersonaDoc
 from ..core.safe import safe_filename
 
 
-def export_buzz(name: str, workdir: str, with_memory: bool = False) -> None:
+def _load_persona(name: str, workdir: str) -> PersonaDoc:
+    """从 workdir/persona/{safe}.json 加载 PersonaDoc。"""
     safe = safe_filename(name)
     json_path = Path(workdir) / "persona" / f"{safe}.json"
     md_path = Path(workdir) / "persona" / f"{safe}.md"
     if json_path.exists():
-        # 优先从完整 PersonaDoc 恢复（含 memory）
         try:
-            doc = PersonaDoc.model_validate(json.loads(json_path.read_text(encoding="utf-8")))
+            return PersonaDoc.model_validate(json.loads(json_path.read_text(encoding="utf-8")))
         except (UnicodeDecodeError, json.JSONDecodeError, ValidationError):
-            # 损坏 json（含非法 UTF-8 编码）是主产物问题：明确报错让用户重新蒸馏，不回退 md
             raise typer.BadParameter(
                 f"persona/{safe}.json 损坏或格式不符，请删除后重新运行 distill"
             )
     elif md_path.exists():
-        # 兼容旧产物：只有 md 时回退为仅 system_prompt
-        doc = PersonaDoc(name=name, display_name=name, system_prompt=md_path.read_text(encoding="utf-8"))
+        return PersonaDoc(name=name, display_name=name, system_prompt=md_path.read_text(encoding="utf-8"))
     else:
         raise typer.BadParameter(f"未找到 persona {md_path}，请先运行 distill")
+
+
+def export_buzz(name: str, workdir: str, with_memory: bool = False, fmt: str = "buzz") -> None:
+    """导出 persona 到指定格式。fmt: text / buzz / all。"""
+    doc = _load_persona(name, workdir)
     if doc.memory and not with_memory:
         typer.echo(
             f"[提醒] 已省略 {len(doc.memory)} 条共同记忆（记忆为明文、含真实内容，默认不含；"
@@ -35,8 +38,23 @@ def export_buzz(name: str, workdir: str, with_memory: bool = False) -> None:
         )
     export_dir = Path(workdir) / "export"
     export_dir.mkdir(parents=True, exist_ok=True)
-    path = write_snapshot_json(doc, str(export_dir), include_memory=with_memory)
-    typer.echo(f"[export] 已生成 -> {path}")
+
+    if fmt == "all":
+        # 导出所有格式
+        from .. import exporters  # noqa: F401 — 触发 exporter 注册
+        from ..core.plugins import export_all as _export_all
+        paths = _export_all(doc, str(export_dir), include_memory=with_memory)
+        for p in paths:
+            typer.echo(f"[export] 已生成 -> {p}")
+    elif fmt == "text":
+        # 仅导出 system prompt
+        from ..exporters.text import TextExporter
+        p = TextExporter().export(doc, str(export_dir))
+        typer.echo(f"[export] 已生成 -> {p}")
+    else:
+        # 默认 buzz 格式
+        path = write_snapshot_json(doc, str(export_dir), include_memory=with_memory)
+        typer.echo(f"[export] 已生成 -> {path}")
     typer.echo("[提醒] 产物含真实聊天内容，分享到 GitHub/他人前请自行脱敏。")
 
 

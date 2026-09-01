@@ -1,6 +1,8 @@
 """GUI 双语化测试：_build_html / run_pipeline / import_to_buzz / 错误翻译。"""
 import json
 
+import pytest
+
 from alchemy_hive.gui.webview_app import _build_html, _tr_error
 from alchemy_hive.gui.actions import run_pipeline
 from alchemy_hive.buzz.importing import import_to_buzz
@@ -8,7 +10,7 @@ from alchemy_hive.buzz.importing import import_to_buzz
 
 def test_build_html_zh_keeps_chinese():
     html = _build_html("zh")
-    assert "把微信聊天蒸馏成 AI 朋友" in html
+    assert "任意聊天源" in html
     assert "window.T =" in html
     assert '"start": "开始蒸馏"' in html
     assert '<option value="zh" selected>' in html
@@ -16,8 +18,8 @@ def test_build_html_zh_keeps_chinese():
 
 def test_build_html_en_translates_static_and_js():
     html = _build_html("en")
-    assert "Distill your WeChat chats into AI friends" in html
-    assert "把微信聊天蒸馏成 AI 朋友" not in html
+    assert "Any chat source" in html
+    assert "任意聊天源" not in html
     assert '<html lang="en">' in html
     assert '"start": "Start distillation"' in html
     assert '<option value="en" selected>' in html
@@ -27,10 +29,10 @@ def test_build_html_en_no_leftover_visible_chinese():
     """英文构建不应残留可见中文文案。"""
     html = _build_html("en")
     for zh in [
-        "把微信聊天蒸馏", "浏览文件", "开始蒸馏", "导出共同记忆",
+        "任意聊天源", "浏览文件", "开始蒸馏", "导出共同记忆",
         "自动识别（推荐）", "你的昵称（可选）", "运行后在这里",
         "导入到 buzz · 打开文件夹并复制路径", "开发者进阶",
-        "通义千问（阿里云）", "豆包（火山方舟）",
+        "通义千问（阿里云）", "豆包（火山方舟）", "显示",
     ]:
         assert zh not in html, f"英文界面残留中文：{zh}"
 
@@ -40,7 +42,7 @@ def test_build_html_en_success_banner_fully_translated():
     html = _build_html("en")
     assert "一键装进 buzz" not in html
     assert "往下拉到" not in html
-    assert "scroll to “Import to buzz”" in html
+    assert "choose an export format below" in html
 
 
 def test_lang_switch_label_and_position():
@@ -77,6 +79,8 @@ def _mock_llm(monkeypatch):
 
 def test_run_pipeline_english_logs(monkeypatch, tmp_path, examples_dir):
     _mock_llm(monkeypatch)
+    # 隔离本机配置：管线会读配置文件 [build] 段，测试不得受开发机 ~/.alchemy-hive 影响
+    monkeypatch.setattr("alchemy_hive.gui.actions.load_config", lambda path=None: {})
     logs = run_pipeline(
         str(examples_dir / "chat.txt"), "小明",
         {"base_url": "http://x", "api_key": "k", "model": "m"},
@@ -117,5 +121,36 @@ def test_set_lang_updates_and_returns():
     assert api.lang == "en"
     api.set_lang("en")   # 同语言不重复调度
     assert api.lang == "en"
-    # _GUI_WINDOW 为 None 时 _apply_lang 应安全空操作
+    # _GUI_WINDOW 为 None 时 _apply_lang 应安全空操作（用采集的状态也不抛）
+    api.set_lang("zh", '{"name": "小明", "api_key": "k"}')
     api._apply_lang()
+
+
+def test_build_html_state_injection_and_restore():
+    """切语言保留输入：合法状态 JSON 注入页面供恢复；非法/缺省注入 null 不拼坏 JS。"""
+    import json as _json
+    state = _json.dumps({"name": "小明", "api_key": "sk-1", "source": "telegram"}, ensure_ascii=False)
+    html = _build_html("zh", state)
+    assert f"window.__S = {state};" in html
+    assert "restoreState()" in html
+    assert _build_html("zh") .count("window.__S = null;") == 1        # 缺省 → null（初始加载不恢复）
+    assert _build_html("en", "not-json").count("window.__S = null;") == 1  # 非法 JSON 不注入
+
+
+def test_en_html_no_unsafe_key_collisions():
+    """修复回归：_EN_HTML 的 key 子串碰撞只在"短 key 排在长 key 之前"时才危险。
+
+    当前实现按 key 长度降序替换，长 key 先替换，短 key 后替换 → 短 key 是长 key 的
+    子串不会出问题（长 key 已被替换走了）。只有短 key 排在前面（即先被替换）时才
+    会把长 key 的一部分提前替换掉 → 破坏 HTML。
+    """
+    from alchemy_hive.gui.webview_app import _EN_HTML
+    keys = list(_EN_HTML.keys())
+    # 按长度降序排列（与 _build_html 的实际替换顺序一致）
+    sorted_keys = sorted(keys, key=len, reverse=True)
+    sorted_set = set(sorted_keys)
+    for i, short in enumerate(sorted_keys):
+        for long in sorted_keys[i + 1:]:
+            if short in long:
+                pytest.fail(f"不安全碰撞：短 key {short!r}（第 {i} 位）是长 key {long!r} 的子串，"
+                            f"会提前替换破坏长 key 的匹配")

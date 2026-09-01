@@ -65,14 +65,28 @@ _L = {
 
 
 def _t(lang: str, key: str, **kw) -> str:
-    return _L.get(lang, _L["zh"])[key].format(**kw)
+    from ..core.i18n import t
+    return t(lang, key, _L, **kw)
 
 
 def _copy_to_clipboard(text: str) -> bool:
-    """Windows 剪贴板：优先 clip.exe（utf-16le），失败返回 False。"""
+    """跨平台剪贴板：Windows 用 clip（utf-16le）、macOS 用 pbcopy、Linux 依次试
+    wl-copy/xclip/xsel；任何一步失败返回 False（上层回退"手动复制路径"提示）。"""
+    import sys
     try:
-        subprocess.run(["clip"], input=text.encode("utf-16le"), check=True, timeout=5, shell=True)
-        return True
+        if os.name == "nt":
+            subprocess.run(["clip"], input=text.encode("utf-16le"), check=True, timeout=5)
+            return True
+        if sys.platform == "darwin":
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True, timeout=5)
+            return True
+        for cmd in ("wl-copy", "xclip", "xsel"):
+            if shutil.which(cmd):
+                args = [cmd] if cmd == "wl-copy" else (
+                    [cmd, "-selection", "clipboard"] if cmd == "xclip" else [cmd, "--clipboard", "--input"])
+                subprocess.run(args, input=text.encode("utf-8"), check=True, timeout=5)
+                return True
+        return False
     except Exception:
         return False
 
@@ -192,27 +206,38 @@ def _load_buzz_config(config_path: str = ".alchemy-hive/config.toml") -> dict:
     }
 
 
+def _toml_str(value: str) -> str:
+    """TOML basic string 转义：用户输入（channel/relay）含引号/反斜杠时不写坏配置。"""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def _save_buzz_channel(config_path: str, channel: str, relay_url: str | None = None) -> None:
-    """把 [buzz] channel（+可选 relay_url）写进配置文件（文本级替换 [buzz] 段）。"""
+    """把 [buzz] channel（+可选 relay_url）写进配置文件（文本级替换 [buzz] 段）。
+
+    安全策略：只替换从 [buzz] 行开始、到下一个 [section] 或 EOF 之间的内容，
+    不触及其他段；追加的 [buzz] 段总是写在文件末尾。
+    """
     p = Path(config_path)
     text = p.read_text(encoding="utf-8") if p.exists() else ""
     out: list[str] = []
     in_buzz = False
     for ln in text.splitlines():
-        if ln.strip().startswith("[buzz]"):
+        stripped = ln.strip()
+        # 精确匹配段头（行首 [buzz] + 可选空白/注释），不匹配含 [buzz] 的值
+        if stripped.startswith("[buzz]") and (len(stripped) == 6 or stripped[6] in (" ", "\t", "#", "]")):
             in_buzz = True
             continue
         if in_buzz:
-            if ln.strip().startswith("["):
+            if stripped.startswith("[") and not stripped.startswith("[buzz"):
                 in_buzz = False
                 out.append(ln)
             continue
         out.append(ln)
     out.append("")
     out.append("[buzz]")
-    out.append(f'channel = "{channel}"')
+    out.append(f"channel = {_toml_str(channel)}")
     if relay_url:
-        out.append(f'relay_url = "{relay_url}"')
+        out.append(f"relay_url = {_toml_str(relay_url)}")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("\n".join(out) + "\n", encoding="utf-8")
 

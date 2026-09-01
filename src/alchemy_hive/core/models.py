@@ -1,6 +1,9 @@
 """中立数据模型：解析与蒸馏共用，不依赖任何平台。"""
 from pydantic import BaseModel
 
+# 发送方向默认别名：me/self/我（所有平台通用）
+SELF_ALIASES = ("我", "self", "me")
+
 
 class Message(BaseModel):
     """一条聊天消息。"""
@@ -28,3 +31,4 @@ class PersonaDoc(BaseModel):
     manual_profile: str = ""     # 用户手动画像（性格标签等，最高优先级）
     corrections: list[str] = []  # 用户纠正记录（dot-skill correction 层）
     system_prompt: str = ""      # 生成后的完整 persona prompt 文本
+    last_distill_ts: str = ""    # 上次蒸馏的最后消息时间戳（增量蒸馏用）

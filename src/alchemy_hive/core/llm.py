@@ -1,6 +1,6 @@
 """OpenAI-compatible LLM 客户端：distill 与 blindtest 共用。
 
-统一负责：模型配置校验、请求组装、超时、对瞬时错误的有限重试、
+统一负责：模型配置校验、请求组装、超时、对瞬时错误（连接/5xx）的有限重试、
 JSON 模式（response_format）支持与兼容回退、非字符串响应归一化。
 """
 import time
@@ -10,10 +10,15 @@ import httpx
 
 class LLMError(RuntimeError):
     """LLM 调用失败：缺少模型配置或网络/响应异常。"""
+    def __init__(self, message: str, *, error_type: str = ""):
+        super().__init__(message)
+        self.error_type = error_type  # "timeout" / "connect" / "" (general)
 
 
 class _UnsupportedJSONMode(LLMError):
     """供应商拒绝 response_format（HTTP 400/422），需去掉 json_mode 重试。"""
+    def __init__(self):
+        super().__init__("供应商不支持 json_mode")
 
 
 _LABELS = {"base_url": "base_url", "api_key": "API key", "model": "model"}
@@ -40,8 +45,8 @@ def chat_completion(
 ) -> str:
     """调 OpenAI-compatible /chat/completions，返回首个 choice 的文本内容。
 
-    配置缺失立即抛 LLMError（不发请求）；对连接/超时/5xx 做有限重试；
-    4xx（认证/参数错误）与响应解析错误不重试，直接抛 LLMError。
+    配置缺失立即抛 LLMError（不发请求）；对连接错误/5xx 做有限重试，
+    超时立即抛（让用户尽快感知慢请求）；4xx（认证/参数错误）与响应解析错误不重试。
     json_mode 被供应商拒绝（400/422）时自动去掉 response_format 重试一次。
     max_tokens 为 None 时不发送（由模型决定输出上限），否则透传给请求。
     """
@@ -76,7 +81,7 @@ def chat_completion(
                     content = "" if content is None else str(content)
                 return content.strip()
             except httpx.TimeoutException as e:
-                raise LLMError(f"模型请求超时（>{timeout}s）：网络较慢或请求/响应过大") from e
+                raise LLMError(f"模型请求超时（>{timeout}s）：网络较慢或请求/响应过大", error_type="timeout") from e
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code if e.response is not None else 0
                 if use_json_mode and status in (400, 422):
@@ -91,7 +96,7 @@ def chat_completion(
             if attempt < max_retries:
                 time.sleep(backoff)
         if isinstance(last_error, httpx.ConnectError):
-            raise LLMError(f"无法连接模型服务 {model['base_url']}，请检查网络与地址") from last_error
+            raise LLMError(f"无法连接模型服务 {model['base_url']}，请检查网络与地址", error_type="connect") from last_error
         raise LLMError("LLM 调用失败，请检查配置和网络") from last_error
 
     try:

@@ -249,6 +249,30 @@ def test_sample_text_keeps_full_content():
     assert long_content in _sample_text(msgs)
 
 
+def test_sample_text_shrinks_to_fit_char_budget():
+    """总字符超预算 → 动态缩减样本数（保底近期 _MIN_RECENT 条），避免撞模型上下文上限。"""
+    from alchemy_hive.core.distill import _sample_text, _MIN_RECENT
+    from alchemy_hive.core.models import Message
+    msgs = [Message(sender="小明", content="字" * 500, timestamp="2023-01-01 00:00:00") for _ in range(3000)]
+    out = _sample_text(msgs, char_budget=30_000)
+    assert len(out) <= 30_000
+    assert out.count("\n") + 1 == _MIN_RECENT  # 收缩到近期保底线（早期已全丢）
+
+
+def test_resolve_config_path_falls_back_to_home(tmp_path, monkeypatch):
+    """默认路径不存在 → 回退 ~/.alchemy-hive/config.toml；显式自定义路径不回退。"""
+    from alchemy_hive.core.distill import resolve_config_path
+    home = tmp_path / "home"
+    (home / ".alchemy-hive").mkdir(parents=True)
+    home_cfg = home / ".alchemy-hive" / "config.toml"
+    home_cfg.write_text("[model]\napi_key=\"k\"\n", encoding="utf-8")
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: home))
+    monkeypatch.chdir(tmp_path)  # CWD 无 .alchemy-hive/config.toml
+    assert resolve_config_path() == str(home_cfg)
+    assert resolve_config_path(None) == str(home_cfg)
+    assert resolve_config_path("no-such.toml") == "no-such.toml"  # 自定义路径保持可预期
+
+
 def test_distill_manual_profile_flows_to_analyze(examples_dir, monkeypatch):
     """手动画像（最高优先级）应进入 analyze prompt，且不出现"未提供"占位。"""
     import json as _json
@@ -363,3 +387,38 @@ def test_distill_relationship_summary_flows(examples_dir, monkeypatch):
     assert "这段关系 · 一路走来" in build_contents[0], "build prompt 应含关系总结段要求"
     assert "significance" in build_contents[0], "记忆的关系意义应进入 build"
     assert "他是那种你半夜打电话一定会接的人" in build_contents[0]
+
+
+def test_parse_json_object_direct_json():
+    """_parse_json_object 直接解析纯 JSON（无 markdown 围栏）。"""
+    from alchemy_hive.core.distill import _parse_json_object
+    result = _parse_json_object('{"display_name": "小明", "relationship": "好"}')
+    assert result == {"display_name": "小明", "relationship": "好"}
+
+
+def test_parse_json_object_with_markdown_fences():
+    """_parse_json_object 正确处理 ```json 包裹的 JSON。"""
+    from alchemy_hive.core.distill import _parse_json_object
+    result = _parse_json_object('```json\n{"display_name": "小明"}\n```')
+    assert result == {"display_name": "小明"}
+
+
+def test_parse_json_object_backtick_in_content_preserved():
+    """修复回归：JSON 值中包含反引号（如聊天原话含 ```）时，不再被正则误删。"""
+    from alchemy_hive.core.distill import _parse_json_object
+    content = '{"body": "你看这段代码 ```python\\nprint(1)```"}'
+    result = _parse_json_object(content)
+    assert result is not None
+    assert "```python" in result["body"], "JSON 值内的反引号不应被去除"
+
+
+def test_parse_json_object_non_dict_returns_none():
+    """_parse_json_object 对非对象 JSON 返回 None。"""
+    from alchemy_hive.core.distill import _parse_json_object
+    assert _parse_json_object('[1,2,3]') is None
+    assert _parse_json_object('"just a string"') is None
+
+
+def test_parse_json_object_garbage_returns_none():
+    from alchemy_hive.core.distill import _parse_json_object
+    assert _parse_json_object('not json at all ```') is None
