@@ -275,6 +275,20 @@ _HTML = """<!DOCTYPE html>
     --radius-card: 18px;
     --radius-ctl: 12px;
   }
+  /* 暗色模式 */
+  body.dark {
+    --bg-body: #1a1d23;
+    --bg-elem: #252830;
+    --dark: #111318;
+    --light: #333740;
+    --text: #e0e4ea;
+    --muted: #8b93a1;
+    --placeholder: #5b6472;
+    --accent: #5b8def;
+    --ok: #3dbf6e;
+    --warn: #e09530;
+    --err: #ef5350;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     /* 英文走 Segoe UI/Helvetica；中文回退到宋体系（思源宋体 → 华文宋体 → 宋体/新宋体） */
@@ -506,6 +520,7 @@ _HTML = """<!DOCTYPE html>
       <option value="zh"__ZH_SEL__>中文</option>
       <option value="en"__EN_SEL__>English</option>
     </select>
+    <button class="ghost" id="theme_toggle" onclick="toggleTheme()" style="margin-left:8px;padding:2px 8px;font-size:11px;">🌙</button>
   </div>
 
   <div class="brand">
@@ -707,6 +722,25 @@ _HTML = """<!DOCTYPE html>
     } catch (e) {}
   }
   function onLang(v) { pywebview.api.set_lang(v, collectState()); }
+
+  /* ---- 暗色模式切换 ---- */
+  function toggleTheme() {
+    document.body.classList.toggle("dark");
+    var btn = el("theme_toggle");
+    var isDark = document.body.classList.contains("dark");
+    btn.textContent = isDark ? "☀️" : "🌙";
+    try { localStorage.setItem("theme", isDark ? "dark" : "light"); } catch(e) {}
+  }
+  /* 页面加载时恢复主题 */
+  (function() {
+    try {
+      if (localStorage.getItem("theme") === "dark") {
+        document.body.classList.add("dark");
+        var btn = document.getElementById("theme_toggle");
+        if (btn) btn.textContent = "☀️";
+      }
+    } catch(e) {}
+  })();
 
   /* API key 明文/密文切换 */
   function toggleKey() {
@@ -1025,61 +1059,118 @@ class Api:
         return True
 
     def _apply_lang(self) -> None:
-        """应用语言切换：先尝试 load_html（完整重载），失败则用 evaluate_js 逐字段更新。"""
+        """应用语言切换：用 evaluate_js 动态更新 DOM，兼容所有 pywebview 后端。"""
         import logging
         _log = logging.getLogger("alchemy_hive.gui")
         try:
             with self._lang_lock:
                 current_lang = self.lang
-                state = self._pending_state
-            html = _build_html(current_lang, state)
-            if _GUI_WINDOW is not None:
-                try:
-                    _GUI_WINDOW.load_html(html)
-                    _log.debug("lang switch: load_html succeeded")
-                except Exception as e:
-                    _log.warning("lang switch: load_html failed (%s), trying evaluate_js fallback", e)
-                    self._apply_lang_js_fallback(current_lang)
+            if _GUI_WINDOW is None:
+                return
+
+            # 1. 更新 T 对象（JS 运行时翻译）
+            t_data = _T.get(current_lang, _T["zh"])
+            try:
+                _GUI_WINDOW.evaluate_js(
+                    f"window.T = {json.dumps(t_data, ensure_ascii=False)}; true"
+                )
+                _log.debug("lang switch: T object updated")
+            except Exception as e:
+                _log.warning("lang switch: T update failed: %s", e)
+
+            # 2. 更新 HTML lang 属性
+            try:
+                lang_attr = "en" if current_lang == "en" else "zh-CN"
+                _GUI_WINDOW.evaluate_js(
+                    f'document.documentElement.lang = "{lang_attr}"; true'
+                )
+            except Exception:
+                pass
+
+            # 3. 更新页面标题
+            try:
+                title = _GUI_TITLES.get(current_lang, _GUI_TITLES["zh"])
+                _GUI_WINDOW.set_title(title)
+            except Exception:
+                pass
+
+            # 4. 更新所有可见静态文案（通过 _EN_HTML 映射）
+            try:
+                html = _build_html(current_lang)
+                # 从新 HTML 中提取翻译后的文案，更新到当前 DOM
+                self._update_dom_text(current_lang)
+            except Exception as e:
+                _log.warning("lang switch: DOM update failed: %s", e)
+
         except Exception as e:
             _log.warning("lang switch: %s", e)
+
+    def _update_dom_text(self, lang: str) -> None:
+        """用 evaluate_js 批量更新 DOM 中的可见文案。"""
+        if _GUI_WINDOW is None:
+            return
+        # 从 _EN_HTML 构建替换映射：中文 → 英文（或反向）
+        if lang == "en":
+            replacements = dict(_EN_HTML)
+        else:
+            # 反向映射：英文 → 中文
+            replacements = {v: k for k, v in _EN_HTML.items()}
+
+        # 批量更新：用 JS 遍历所有文本节点
+        replacements_json = json.dumps(replacements, ensure_ascii=False)
+        js = f"""
+        (function(replacements) {{
+            var walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while (node = walk.nextNode()) {{
+                var text = node.textContent;
+                for (var zh in replacements) {{
+                    if (text.indexOf(zh) >= 0) {{
+                        node.textContent = text.split(zh).join(replacements[zh]);
+                        break;
+                    }}
+                }}
+            }}
+            return true;
+        }})({replacements_json});
+        """
         try:
-            if _GUI_WINDOW is not None:
-                _GUI_WINDOW.set_title(_GUI_TITLES.get(current_lang, _GUI_TITLES["zh"]))
+            _GUI_WINDOW.evaluate_js(js)
         except Exception:
             pass
 
-    def _apply_lang_js_fallback(self, lang: str) -> None:
-        """load_html 失败时的 JS 回退：逐个更新可见文案。"""
-        if _GUI_WINDOW is None:
-            return
-        import re as _re
-        html = _build_html(lang)
-        # 从新 HTML 提取关键元素的文本
-        replacements = {
-            "#go_text": _re.search(r'id="go_text">([^<]+)<', html),
-            "#key_toggle": None,  # 由 T 控制
+        # 更新 placeholder 属性
+        placeholder_map = {
+            "chat_input": "说点什么..." if lang == "zh" else "Say something...",
+            "api_key": "API key（向模型供应商申请，必需）" if lang == "zh" else "API key (required)",
+            "base_url": "模型地址 base_url（选供应商后自动填入，可再修改）" if lang == "zh" else "Model URL (auto-filled)",
+            "model": "模型名（自动匹配，可再修改）" if lang == "zh" else "Model name (auto-matched)",
+            "name": "Ta 的名称（如：小明）" if lang == "zh" else "Their name (e.g. Xiaoming)",
         }
-        for selector, match in replacements.items():
-            if match:
-                text = match.group(1)
-                try:
-                    _GUI_WINDOW.evaluate_js(f'document.querySelector("{selector}").textContent = {json.dumps(text)}; true')
-                except Exception:
-                    pass
-        # 更新 T 对象
-        t_data = _T.get(lang, _T["zh"])
-        try:
-            _GUI_WINDOW.evaluate_js(f"window.T = {json.dumps(t_data, ensure_ascii=False)}; true")
-        except Exception:
-            pass
-        # 更新按钮文案
-        button_map = {
-            "go_text": "开始蒸馏" if lang == "zh" else "Start distillation",
-            "key_toggle": t_data.get("show_key", "显示"),
-        }
-        for elem_id, text in button_map.items():
+        for elem_id, placeholder in placeholder_map.items():
             try:
-                _GUI_WINDOW.evaluate_js(f'document.getElementById("{elem_id}").textContent = {json.dumps(text)}; true')
+                # 如果当前语言是英文，需要从 _EN_HTML 查找翻译
+                if lang == "en":
+                    for zh, en in _EN_HTML.items():
+                        if placeholder == zh:
+                            placeholder = en
+                            break
+                _GUI_WINDOW.evaluate_js(
+                    f'document.getElementById("{elem_id}").placeholder = {json.dumps(placeholder)}; true'
+                )
+            except Exception:
+                pass
+
+        # 更新按钮文案
+        button_updates = {
+            "go_text": "开始蒸馏" if lang == "zh" else "Start distillation",
+            "key_toggle": _T.get(lang, _T["zh"]).get("show_key", "显示"),
+        }
+        for elem_id, text in button_updates.items():
+            try:
+                _GUI_WINDOW.evaluate_js(
+                    f'document.getElementById("{elem_id}").textContent = {json.dumps(text)}; true'
+                )
             except Exception:
                 pass
 
