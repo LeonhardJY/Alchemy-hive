@@ -114,3 +114,54 @@ def test_sillytavern_exporter(tmp_path):
     assert card["data"]["system_prompt"] == "你是小明，一个活泼的朋友。"
     assert len(card["data"]["character_book"]["entries"]) == 1
     assert card["data"]["character_book"]["entries"][0]["keys"] == ["约饭"]
+
+
+# ---- Coze exporter ----
+
+def test_coze_exporter(tmp_path):
+    from alchemy_hive.exporters.coze import CozeExporter
+    doc = _make_doc(system_prompt="你是小明，一个活泼的朋友。")
+    doc.signature_phrases = ["哈哈"]
+    p = CozeExporter().export(doc, str(tmp_path))
+    assert p.endswith(".coze.json")
+    config = json.loads(open(p, encoding="utf-8").read())
+    assert config["name"] == "小明"
+    assert config["system_prompt"] == "你是小明，一个活泼的朋友。"
+    assert "哈哈" in config["description"]
+    assert config["first_message"]
+
+
+def test_coze_exporter_empty_prompt(tmp_path):
+    from alchemy_hive.exporters.coze import CozeExporter
+    doc = _make_doc(system_prompt="")
+    p = CozeExporter().export(doc, str(tmp_path))
+    config = json.loads(open(p, encoding="utf-8").read())
+    assert config["name"] == "小明"
+    assert config["system_prompt"] == ""
+
+
+# ---- Dify exporter ----
+
+def test_dify_exporter(tmp_path):
+    import yaml
+    from alchemy_hive.exporters.dify import DifyExporter
+    doc = _make_doc(system_prompt="你是小明，一个活泼的朋友。")
+    p = DifyExporter().export(doc, str(tmp_path))
+    assert p.endswith(".dify.yml")
+    with open(p, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    assert config["app"]["name"] == "小明"
+    assert config["app"]["mode"] == "chat"
+    assert config["model_config"]["prompt_template"][0]["text"] == "你是小明，一个活泼的朋友。"
+    assert config["model_config"]["prompt_template"][0]["role"] == "system"
+
+
+def test_dify_exporter_empty_prompt(tmp_path):
+    import yaml
+    from alchemy_hive.exporters.dify import DifyExporter
+    doc = _make_doc(system_prompt="")
+    p = DifyExporter().export(doc, str(tmp_path))
+    with open(p, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    assert config["app"]["name"] == "小明"
+    assert config["model_config"]["prompt_template"][0]["text"] == ""

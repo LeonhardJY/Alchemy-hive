@@ -59,12 +59,24 @@ def load_config(path: str | None) -> dict:
         return {}
 
 
-# 样本策略（对齐 dot-skill：近期完整正文 + 早期抽样，不截断正文）
+# 样本策略（默认值；可通过 config.toml 的 [sampling] 段覆盖）
 _SAMPLE_RECENT = 1500   # 近期完整消息数（覆盖当前关系动态）
 _SAMPLE_EARLY = 300     # 早期消息数（覆盖共同记忆来源）
 _PER_MSG_CAP = 1000     # 单条超长消息兜底截断（罕见），正文默认完整
 _CHAR_BUDGET = 240_000  # 样本总字符预算：超了就动态减样本数，避免撞模型上下文上限（400）
 _MIN_RECENT = 50        # 预算收缩时近期样本的保底条数（近期动态是画像主依据）
+
+
+def _get_sampling_config(config: dict) -> dict:
+    """从 config 读取采样参数，未配置则用默认值。"""
+    cfg = config.get("sampling") or {}
+    return {
+        "sample_recent": int(cfg.get("recent", _SAMPLE_RECENT)),
+        "sample_early": int(cfg.get("early", _SAMPLE_EARLY)),
+        "per_msg_cap": int(cfg.get("per_msg_cap", _PER_MSG_CAP)),
+        "char_budget": int(cfg.get("char_budget", _CHAR_BUDGET)),
+        "min_recent": int(cfg.get("min_recent", _MIN_RECENT)),
+    }
 
 
 def _render_parts(msgs: list[Message], per_msg_cap: int) -> list[str]:
@@ -78,10 +90,11 @@ def _render_parts(msgs: list[Message], per_msg_cap: int) -> list[str]:
 
 
 def _sample_text(messages: list[Message], recent: int = _SAMPLE_RECENT, early: int = _SAMPLE_EARLY,
-                 per_msg_cap: int = _PER_MSG_CAP, char_budget: int = _CHAR_BUDGET) -> str:
+                 per_msg_cap: int = _PER_MSG_CAP, char_budget: int = _CHAR_BUDGET,
+                 min_recent: int = _MIN_RECENT) -> str:
     """近期完整 + 早期抽样；正文不截断（仅单条超长时兜底截断）。
 
-    总字符超预算时动态缩减样本数（先丢早期、再对半减近期，至少留 _MIN_RECENT 条），
+    总字符超预算时动态缩减样本数（先丢早期、再对半减近期，至少留 min_recent 条），
     避免大聊天记录撞模型上下文上限。
     """
     splittable = len(messages) > recent
@@ -96,7 +109,7 @@ def _sample_text(messages: list[Message], recent: int = _SAMPLE_RECENT, early: i
     while splittable and total > char_budget:
         if early_n > 0:
             early_n = 0                          # 先丢早期抽样
-        elif recent_n > _MIN_RECENT:
+        elif recent_n > min_recent:
             recent_n = max(_MIN_RECENT, recent_n // 2)  # 再对半减近期
         else:
             break                                # 已到底仍超：交给模型侧报错，不再阉割
@@ -163,7 +176,10 @@ def _build_config(config: dict) -> dict:
 
 def _analyze_pass(messages: list[Message], name: str, config: dict, manual_profile: str = "", fix: str = "") -> dict:
     """Stage 1：结构化分析。成功返回分析 dict；任何失败抛 DistillError 并暴露原始响应，便于诊断。"""
-    sample = _sample_text(messages)
+    sc = _get_sampling_config(config)
+    sample = _sample_text(messages, recent=sc["sample_recent"], early=sc["sample_early"],
+                          per_msg_cap=sc["per_msg_cap"], char_budget=sc["char_budget"],
+                          min_recent=sc["min_recent"])
     prompt = (
         ANALYZE_PROMPT
         .replace("{name}", name)

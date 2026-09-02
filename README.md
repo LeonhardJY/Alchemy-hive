@@ -27,8 +27,8 @@ your chat file ──→ parser ──→ two-stage LLM distillation ──→ P
   (10 platforms:        detect platform,          analyze + build:        (system prompt
   WeChat /             normalize time,            structured analysis →   .txt / buzz
   Telegram /           filter media)              400+ line persona       .agent.json /
-  WhatsApp /                                      with real quotes        SillyTavern
-  Discord /
+  WhatsApp /                                      with real quotes        SillyTavern /
+  Discord /                                        real quotes            Coze / Dify)
   Slack /
   iMessage /
   QQ /
@@ -51,11 +51,13 @@ your chat file ──→ parser ──→ two-stage LLM distillation ──→ P
                     └──────┬──────┘
                            │ LLM calls
 Chat Sources ──→ Parser ──→ Distill Engine ──→ PersonaDoc ──→ Exporters
- (10 platforms)   (detect)    (analyze→build)   (universal)   (3 formats)
+ (10 platforms)   (detect)    (analyze→build)   (universal)   (5 formats)
                   + parse                                    │
                                                              ├──→ System Prompt (.txt)
                                                              ├──→ Buzz (.agent.json)
-                                                             └──→ SillyTavern (card_v2)
+                                                             ├──→ SillyTavern (card_v2)
+                                                             ├──→ Coze Bot Config (.json)
+                                                             └──→ Dify App DSL (.yml)
 
               CLI (13 cmds)     GUI (pywebview)
               Chat playground   Auto-evaluate (LLM-judge)
@@ -153,7 +155,7 @@ Detailed export instructions: [English](docs/WEFLOW_EXPORT_EN.md) · [中文](do
 - **Two-stage distillation** — structured analysis → long-form persona with real quotes
 - **Incremental distillation** — `--incremental` merges new messages into existing persona
 - **Plugin architecture** — source adapters + exporter adapters; add new platforms with one file
-- **Multi-format export** — system prompt (.txt), buzz (.agent.json), SillyTavern (character card V2), extensible
+- **Multi-format export** — system prompt (.txt), buzz (.agent.json), SillyTavern (character card V2), Coze Bot Config (.json), Dify App DSL (.yml), extensible
 - **CSV support** — iMessage CSV exports parsed natively; parser accepts JSON/txt/CSV
 - **Chat playground** — talk to your persona right in the app, no export needed
 - **Auto-evaluation** — LLM-as-judge scores authenticity, consistency, expression, emotional depth

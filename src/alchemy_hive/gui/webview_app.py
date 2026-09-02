@@ -612,6 +612,8 @@ _HTML = """<!DOCTYPE html>
         <option value="text">System Prompt (.txt) — 通用</option>
         <option value="buzz">buzz (.agent.json)</option>
         <option value="sillytavern">SillyTavern (character_card_v2)</option>
+        <option value="coze">Coze Bot Config (.json)</option>
+        <option value="dify">Dify App DSL (.yml)</option>
       </select>
       <button class="ghost" onclick="exportPersona()" style="flex:1;">导出</button>
     </div>

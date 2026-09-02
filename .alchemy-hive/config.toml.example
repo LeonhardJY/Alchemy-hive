@@ -18,3 +18,11 @@ model = "deepseek-v4-flash"
 # [buzz]
 # channel = ""
 # relay_url = "http://localhost:3000"
+
+# 可选：采样策略（控制分析阶段的消息采样量，适配不同上下文窗口的模型）
+# [sampling]
+# recent = 1500      # 近期消息数（默认 1500）
+# early = 300        # 早期消息数（默认 300）
+# char_budget = 240000  # 总字符预算（默认 240K，小模型可降至 32000）
+# per_msg_cap = 1000    # 单条消息截断上限（默认 1000）
+# min_recent = 50       # 预算收缩时近期保底条数（默认 50）
