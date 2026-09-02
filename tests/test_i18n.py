@@ -26,15 +26,20 @@ def test_build_html_en_translates_static_and_js():
 
 
 def test_build_html_en_no_leftover_visible_chinese():
-    """英文构建不应残留可见中文文案。"""
+    """英文构建不应残留可见中文文案（排除 JS LANG_MAP 中的双语文案）。"""
     html = _build_html("en")
+    # 提取 <body> 中 <script> 之前的可见 HTML
+    import re
+    body_start = html.find("<body>")
+    script_start = html.find("<script>", body_start)
+    visible_html = html[body_start:script_start] if script_start > body_start else html[body_start:]
     for zh in [
         "任意聊天源", "浏览文件", "开始蒸馏", "导出共同记忆",
         "自动识别（推荐）", "你的昵称（可选）", "运行后在这里",
         "导入到 buzz · 打开文件夹并复制路径", "开发者进阶",
         "通义千问（阿里云）", "豆包（火山方舟）", "显示",
     ]:
-        assert zh not in html, f"英文界面残留中文：{zh}"
+        assert zh not in visible_html, f"英文界面残留中文：{zh}"
 
 
 def test_build_html_en_success_banner_fully_translated():

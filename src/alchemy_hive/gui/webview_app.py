@@ -725,9 +725,105 @@ _HTML = """<!DOCTYPE html>
   }
   function onLang(v) {
     try { localStorage.setItem("lang", v); } catch(e) {}
-    pywebview.api.set_lang(v, "").then(function() {
-      location.reload();
-    });
+    applyLang(v);
+  }
+
+  /* ---- 纯前端语言切换：两套文案都在 JS 里，直接替换 DOM ---- */
+  var LANG_MAP = {
+    "zh": {
+      "任意聊天源 → AI persona → 任意 agent 平台": "任意聊天源 → AI persona → 任意 agent 平台",
+      "本项目完全开源，不会获取您的任何个人信息和 API key。": "本项目完全开源，不会获取您的任何个人信息和 API key。",
+      "选择来源": "选择来源", "蒸馏": "蒸馏", "导出 / 测试": "导出 / 测试",
+      "原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来": "原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来",
+      "蒸馏人物 · 性格画像与模型（画像越具体越像 TA）": "蒸馏人物 · 性格画像与模型（画像越具体越像 TA）",
+      "浏览文件…": "浏览文件…", "开始蒸馏": "开始蒸馏", "蒸馏成功 ✓": "蒸馏成功 ✓",
+      "导出": "导出", "发送": "发送", "自动评分": "自动评分",
+      "说点什么...": "说点什么...", "显示": "显示", "隐藏": "隐藏",
+      "质量评分": "质量评分", "点击下方按钮自动评分": "点击下方按钮自动评分",
+      "蒸馏完成后在这里和 TA 聊天...": "蒸馏完成后在这里和 TA 聊天...",
+    },
+    "en": {
+      "任意聊天源 → AI persona → 任意 agent 平台": "Any chat source → AI persona → Any agent platform",
+      "本项目完全开源，不会获取您的任何个人信息和 API key。": "Open source — we never collect your personal data or API keys.",
+      "选择来源": "Source", "蒸馏": "Distill", "导出 / 测试": "Export / Test",
+      "原料导入 · 选导出平台（自动识别也行），把聊天文件拖进来": "Step 1 · Choose a platform (auto-detect works), then drop your chat file",
+      "蒸馏人物 · 性格画像与模型（画像越具体越像 TA）": "Step 2 · Persona & model (the more specific the profile, the closer it gets)",
+      "浏览文件…": "Browse…", "开始蒸馏": "Start distillation", "蒸馏成功 ✓": "Distillation complete ✓",
+      "导出": "Export", "发送": "Send", "自动评分": "Auto-evaluate",
+      "说点什么...": "Say something...", "显示": "Show", "隐藏": "Hide",
+      "质量评分": "Quality Score", "点击下方按钮自动评分": "Click below to auto-evaluate",
+      "蒸馏完成后在这里和 TA 聊天...": "Start chatting after distillation...",
+    }
+  };
+  var PLACEHOLDER_MAP = {
+    "zh": {
+      "chat_input": "说点什么...", "name": "Ta 的名称（如：小明）",
+      "self_name": "你的昵称（可选）：对话里你的名字，用于区分方向（如：我 / 张三）",
+      "profile": "性格画像（可选，最高优先级）如：INTJ 摩羯座 爱吐槽 重感情",
+      "fix": "纠正（可选）：对上次蒸馏不满意时填，如：他不会冷淡，他其实很细心",
+      "base_url": "模型地址 base_url（选供应商后自动填入，可再修改）",
+      "model": "模型名（自动匹配，可再修改）",
+      "api_key": "API key（向模型供应商申请，必需）",
+    },
+    "en": {
+      "chat_input": "Say something...", "name": "Their name (e.g. Xiaoming)",
+      "self_name": "Your nickname (optional): your name in this chat",
+      "profile": "Personality profile (optional) e.g. INTJ Capricorn sarcastic loyal",
+      "fix": "Correction (optional): if the last result felt off",
+      "base_url": "Model URL (auto-filled when you pick a provider)",
+      "model": "Model name (auto-matched, editable)",
+      "api_key": "API key (required — get it from your provider)",
+    }
+  };
+
+  function applyLang(lang) {
+    var map = LANG_MAP[lang] || LANG_MAP["zh"];
+    /* 替换所有文本节点 */
+    var walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    var node;
+    while (node = walk.nextNode()) {
+      var text = node.textContent;
+      for (var zh in map) {
+        if (text.indexOf(zh) >= 0) {
+          node.textContent = text.split(zh).join(map[zh]);
+          break;
+        }
+      }
+    }
+    /* 替换 placeholder */
+    var ph = PLACEHOLDER_MAP[lang] || PLACEHOLDER_MAP["zh"];
+    for (var id in ph) {
+      var elem = document.getElementById(id);
+      if (elem) elem.placeholder = ph[id];
+    }
+    /* 更新 HTML lang 属性 */
+    document.documentElement.lang = (lang === "en") ? "en" : "zh-CN";
+    /* 更新语言选择器 */
+    var sel = document.getElementById("lang_sel");
+    if (sel) sel.value = lang;
+    /* 更新 T 对象 */
+    if (typeof T !== "undefined") {
+      try {
+        var tData = (lang === "en") ? {
+          "self_required": "Your nickname (required): needed to tell who is you",
+          "self_optional": "Your nickname (optional): your name in this chat",
+          "selected": "Selected: ", "no_file": "No file received.",
+          "detecting": "Detecting file format…", "distilling": "Distilling…",
+          "start": "Start distillation", "show_key": "Show", "hide_key": "Hide",
+          "fields": "chat file|person's name|model URL|API key|model name",
+          "sep": ", ", "error_prefix": "Error: ", "warn_marker": "Reminder",
+        } : {
+          "self_required": "你的昵称（必填）：该平台导出不带方向，需要它区分谁是你",
+          "self_optional": "你的昵称（可选）：对话里你的名字，用于区分方向（如：我 / 张三）",
+          "selected": "已选择：", "no_file": "没有拿到文件，请改用「浏览文件」选择。",
+          "detecting": "正在识别文件格式…", "distilling": "正在蒸馏中…",
+          "start": "开始蒸馏", "show_key": "显示", "hide_key": "隐藏",
+          "fields": "聊天文件|Ta 的名称|模型地址|API key|模型名",
+          "sep": "、", "error_prefix": "错误: ", "warn_marker": "提醒",
+        };
+        for (var k in tData) T[k] = tData[k];
+      } catch(e) {}
+    }
   }
 
   /* ---- 暗色模式切换 ---- */
@@ -746,6 +842,10 @@ _HTML = """<!DOCTYPE html>
         var btn = document.getElementById("theme_toggle");
         if (btn) btn.textContent = "☀️";
       }
+    } catch(e) {}
+    try {
+      var savedLang = localStorage.getItem("lang");
+      if (savedLang && savedLang !== "zh") applyLang(savedLang);
     } catch(e) {}
   })();
 
