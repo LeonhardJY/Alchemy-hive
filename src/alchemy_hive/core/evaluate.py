@@ -129,4 +129,31 @@ def auto_evaluate(persona_path: str | Path, config: dict, n_scenarios: int = 10)
         }
 
     result["test_results"] = test_results
+
+    # 保存评分历史
+    _save_eval_history(persona_path, result)
+
     return result
+
+
+def _save_eval_history(persona_path: str, result: dict) -> None:
+    """保存评分历史到 build/eval_history/{name}.jsonl。"""
+    import datetime
+    try:
+        p = Path(persona_path)
+        history_dir = p.parent.parent / "eval_history"
+        history_dir.mkdir(parents=True, exist_ok=True)
+        history_file = history_dir / f"{p.stem}.jsonl"
+        entry = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "overall": result.get("overall", 0),
+            "authenticity": result.get("authenticity", 0),
+            "consistency": result.get("consistency", 0),
+            "expression": result.get("expression", 0),
+            "emotional_depth": result.get("emotional_depth", 0),
+            "summary": result.get("summary", ""),
+        }
+        with history_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass  # 评分历史保存失败不影响主流程

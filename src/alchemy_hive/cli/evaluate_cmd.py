@@ -20,7 +20,6 @@ def run_evaluate(name: str, workdir: str, config: dict, n: int) -> None:
 
     # 输出报告
     score = result.get("overall", 0)
-    color = "green" if score >= 70 else ("yellow" if score >= 40 else "red")
     typer.echo(f"━━━ 评估报告 ━━━")
     typer.echo(f"  总分：{score}/100")
     typer.echo(f"  真实感：{result.get('authenticity', 0)}/10")
@@ -40,3 +39,28 @@ def run_evaluate(name: str, workdir: str, config: dict, n: int) -> None:
         for r in test_results:
             typer.echo(f"\n  场景：{r['scenario']}")
             typer.echo(f"  回复：{r['reply']}")
+
+    # 显示历史趋势
+    _show_history(workdir, name)
+
+
+def _show_history(workdir: str, name: str) -> None:
+    """显示评分历史趋势。"""
+    safe = safe_filename(name)
+    history_file = Path(workdir) / "eval_history" / f"{safe}.jsonl"
+    if not history_file.exists():
+        return
+    try:
+        entries = []
+        for line in history_file.read_text(encoding="utf-8").strip().split("\n"):
+            if line.strip():
+                entries.append(json.loads(line))
+        if len(entries) < 2:
+            return
+        typer.echo(f"\n━━━ 评分趋势（最近 {len(entries)} 次）━━━")
+        for e in entries[-5:]:
+            ts = e.get("timestamp", "")[:16]
+            score = e.get("overall", 0)
+            typer.echo(f"  {ts}  总分 {score}/100  真实感 {e.get('authenticity', 0)}/10")
+    except Exception:
+        pass
