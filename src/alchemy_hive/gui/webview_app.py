@@ -252,6 +252,8 @@ def _build_html(lang: str, state_json: str = "") -> str:
     html = html.replace("__ZH_SEL__", " selected" if lang == "zh" else "")
     html = html.replace("__EN_SEL__", " selected" if lang == "en" else "")
     html = html.replace("__LANG_LABEL__", "语言" if lang == "zh" else "Language")
+    # 注入 localStorage 主题恢复（在 body 加载时立即应用，避免闪烁）
+    html = html.replace("<body>", '<body><script>try{if(localStorage.getItem("theme")==="dark")document.body.classList.add("dark")}catch(e){}</script>')
     return html
 
 _HTML = """<!DOCTYPE html>
@@ -721,7 +723,12 @@ _HTML = """<!DOCTYPE html>
       onSource();   // 恢复昵称提示；已有文件时会自动重新识别
     } catch (e) {}
   }
-  function onLang(v) { pywebview.api.set_lang(v, collectState()); }
+  function onLang(v) {
+    try { localStorage.setItem("lang", v); } catch(e) {}
+    pywebview.api.set_lang(v, "").then(function() {
+      location.reload();
+    });
+  }
 
   /* ---- 暗色模式切换 ---- */
   function toggleTheme() {
@@ -731,7 +738,7 @@ _HTML = """<!DOCTYPE html>
     btn.textContent = isDark ? "☀️" : "🌙";
     try { localStorage.setItem("theme", isDark ? "dark" : "light"); } catch(e) {}
   }
-  /* 页面加载时恢复主题 */
+  /* 页面加载时恢复主题和语言 */
   (function() {
     try {
       if (localStorage.getItem("theme") === "dark") {
@@ -1039,23 +1046,10 @@ class Api:
         self._lang_lock = threading.Lock()  # 保护 lang / _pending_state 跨线程访问
 
     def set_lang(self, lang: str, state: str = "") -> bool:
-        """切换界面语言。state 为 JS 采集的表单状态 JSON，重载后恢复。"""
-        import logging
-        _log = logging.getLogger("alchemy_hive.gui")
+        """切换界面语言。JS 端保存到 localStorage 后调用 location.reload()。"""
         lang = lang if lang in ("zh", "en") else "zh"
-        try:
-            obj = json.loads(state) if state else None
-            pending = json.dumps(obj, ensure_ascii=False) if isinstance(obj, dict) else ""
-        except Exception:
-            pending = ""
         with self._lang_lock:
-            self._pending_state = pending
-            if lang != self.lang:
-                self.lang = lang
-                _log.info("lang switch: %s → %s, scheduling reload", "zh" if lang == "en" else "en", lang)
-                threading.Timer(0.15, self._apply_lang).start()
-            else:
-                _log.debug("lang switch: already %s, skipping", lang)
+            self.lang = lang
         return True
 
     def _apply_lang(self) -> None:
