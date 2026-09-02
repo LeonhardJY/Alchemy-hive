@@ -191,6 +191,32 @@ def export_all_cmd(
         typer.echo(f"[export] 已生成 -> {p}")
 
 
+@app.command("compare")
+def compare_cmd(
+    name_a: str = typer.Option(..., "--name-a", help="第一个人物名"),
+    name_b: str = typer.Option(..., "--name-b", help="第二个人物名"),
+    workdir: str = typer.Option("build", "--workdir", help="工作目录"),
+):
+    """对比两个 persona 的差异。"""
+    import json
+    from pathlib import Path
+    from ..core.compare import compare_personas, format_comparison
+    from ..core.models import PersonaDoc
+    from ..core.safe import safe_filename
+
+    def load(name):
+        safe = safe_filename(name)
+        p = Path(workdir) / "persona" / f"{safe}.json"
+        if not p.exists():
+            raise typer.BadParameter(f"未找到 persona: {p}")
+        return PersonaDoc.model_validate(json.loads(p.read_text(encoding="utf-8")))
+
+    doc_a = load(name_a)
+    doc_b = load(name_b)
+    result = compare_personas(doc_a, doc_b)
+    typer.echo(format_comparison(result, name_a, name_b))
+
+
 @app.command("gui")
 def gui_cmd(lang: str = typer.Option("auto", "--lang", help="界面语言：auto/zh/en（默认 auto 自动检测系统语言）")):
     """启动桌面图形界面（pywebview 玻璃拟态，中英双语）。"""
